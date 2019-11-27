@@ -1,12 +1,24 @@
-# SM-SPC
-A fully symbolic, asar-assemblable source code for Super Metroid's SPC (audio) engine.
+This directory contains the source code for generating a byte-for-byte copy of the data block of the SPC engine and writing it to the correct location ($CF:8104). See main.asm for instruction.
 
-The vanilla directory contains the source code for generating a byte-for-byte copy of the data block of the SPC engine and writing it to the correct location ($CF:8104). See vanilla/main.asm for instruction.
+The files here are assembled into the following order:
+* engine.asm
+* music.asm
+* engine data.asm
+* system.asm
+* sound library 1.asm
+* sound library 2.asm
+* sound library 3.asm
+* shared trackers.asm
 
-The main directory is reserved for customisations/optimisations to the engine.
+This is a rough and arbitrary division, there will be routines in music.asm that are called by the sound libraries for example.
 
-The assembler used by this project is currently asar: https://github.com/RPGHacker/asar
-Note that asar is imperfect, and might be switched out for a fork in the forseeable future.
+engine.asm contains the entry point, main game loop and some general utility functions.  
+engine data.asm contains some associated data.  
+system.asm contains just the CPU->APU data transfer function and a memclear function.
 
-The Super Metroid SPC engine was both disassembled and rewritten in source form by myself.
-The original disassembly (with line addresses and comments) can be viewed here: http://patrickjohnston.org/ASM/ROM%20data/Super%20Metroid/SPC%20disassembly.asm
+The three sound libraries handle the three types of sound effect Super Metroid can play.
+Each is associated with a CPU IO channel ($F5/$F6/$F7) and have unique sets of sound effects that be played by that library.
+
+Sound library 1 is mostly Samus related, sound library 2 is mostly enemy ralted, and sound library 3 more miscallaneous. See http://patrickjohnston.org/ASM/Lists/Super%20Metroid/Sound%20effects.asm
+
+Library 1 sound effects are able to use up to four voices, whilst library 2/3 sound effects may only use up to two voices.
