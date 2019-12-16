@@ -159,10 +159,7 @@ endmacro
 !trackInstrumentPitches                 = $0220
 !trackRepeatedSubsectionAddresses       = $0230
 !trackRepeatedSubsectionReturnAddresses = $0240
-; $0250..5F: Unused
-; $0260..6E: Unused
-!trackPitches                           = $0261
-; $0270..7F: Unused
+; $0250..7F: Unused
 !trackSlideLengths                      = $0280
 !trackSlideDelays                       = $0281
 !trackSlideDirections                   = $0290

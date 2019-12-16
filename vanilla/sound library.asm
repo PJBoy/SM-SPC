@@ -141,8 +141,7 @@ mov x,!voiceIndex
 call setInstrumentSettings
 call <getNextDataByte> : mov x,!voiceIndex : mov !trackOutputVolumes+x,a
 mov a,#$00 : mov !trackPhaseInversionOptions+x,a
-call <getNextDataByte> : mov !note+1,a : mov !note,#$00
-call writeDspVoiceVolumes
+call <getNextDataByte> : mov !panningBias+1,a : mov !panningBias,#$00 : call writeDspVoiceVolumes
 call <getNextDataByte>
 cmp a,#$F6 : beq +
 mov !soundNote,a

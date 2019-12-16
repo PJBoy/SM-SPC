@@ -2,16 +2,17 @@
 ;     asar --fix-checksum=off main.asm SM.sfc
 
 ; where SM.sfc is your vanilla ROM with an sfc extension (asar requirement).
-; The `--fix-checksum=off` is there because asar's checksum generation is incorrect (probably related to the bug mentioned at the bottom of this file)
+; The `--fix-checksum=off` is there because asar's checksum generation is incorrect (probably related to the bottom of this file)
 
 math pri on ; Use conventional maths priority (otherwise is strict left-to-right evaluation)
 warnings disable W1018 ; "xkas-style conditional compilation detected. Please use the if command instead. [rep 0]"
+lorom
 
 
 ; The SPC engine data block is written directly via the spc700-inline arch,
-; which handles writing the data block header containing the block size and ARAM destination
+; which handles writing the data block header containing the block size and ARAM destination.
+; Note that an org statement defines a new data block (i.e. only use org once, at the beginning)
 
-lorom
 org $CF8104 ; The actual ROM location the data block is going to be written to
 
 arch spc700-inline
@@ -58,8 +59,8 @@ incsrc "shared trackers.asm"
 print "$",pc, ": EOF"
 
 
-; An asar bug is clearing the 4 bytes after the above SPC data block; the below is correcting that
+; The inline arch writes a terminator data block, which we don't want. The below is reverting that
 arch 65816
 org $CFC2EA
 
-dw $0C93, $5820
+dw read2($CFC2EA), read2($CFC2EC)

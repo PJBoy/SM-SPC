@@ -95,10 +95,10 @@ dw .introTrackPointers
 - : dw .loopTrackPointers, $00FF,-, $0000
 
 .loopTrackPointers
-dw $5593, $55C8, $55EE, $5630, $0000, $0000, $0000, $0000
+dw .loopTrack0, .loopTrack1, .loopTrack2, .loopTrack3, $0000, $0000, $0000, $0000
 
 .introTrackPointers
-dw $5649, $5665, $566D, $5675, $567D, $0000, $0000, $0000
+dw .introTrack0, .introTrack1, .introTrack2, .introTrack3, .introTrack4, $0000, $0000, $0000
 
 .loopTrack0
 db $E5, $DC, $E7, $10, $E0, $0C, $F4, $28, $ED, $46, $E1, $07, $F5, $0F, $0A, $0A,\
@@ -144,10 +144,10 @@ db $E0, $0C, $F4, $28, $ED, $28, $E1, $0D, $0C, $C9, $00, $ED, $3C, $EE, $3C, $C
 musicTrack4:
 {
 .tracker
-- : dw $569F, $00FF,-, $0000
+- : dw .trackPointers, $00FF,-, $0000
 
 .trackPointers
-dw $56AF, $0000, $0000, $0000, $0000, $0000, $0000, $0000
+dw .track0, $0000, $0000, $0000, $0000, $0000, $0000, $0000
 
 .track0
 db $FA, $26, $E7, $10, $E5, $E6, $F5, $01, $00, $00, $F7, $02, $00, $00, $E0, $0B,\
