@@ -1,50 +1,16 @@
-; $1500
 main:
 {
 .initialisation
 {
-; Redundantly clear direct page register
-clrp
+; The page 0 is clear, except for $00; page 1 has the stack. Clear all the rest of RAM
+movw $00,ya
 
-; Randomly decrease stack size by 20h bytes
-mov x,#!p_stackBegin&$FF : mov sp,x
-
-; Redundantly clear $00..DF
-mov a,#$00 : mov x,a
-
--
-mov (x+),a
-cmp x,#$E0 : bne -
-
-; Clear echo buffer
-mov x,#$00 : mov a,#$00
-mov !p_echoBuffer,a : mov !p_echoBuffer+1,#!echoBufferBegin>>8
-
--
-mov (!p_echoBuffer+x),a
-inc !p_echoBuffer : bne -
-inc !p_echoBuffer+1 : cmp !p_echoBuffer+1,#!echoBufferEnd>>8 : bne -
-
-; Redundantly clear direct page sound effect RAM ($20..2E, $D0..EE)
-; Leaving the addresses here hardcoded, because these ranges don't really correspond to actual meaningful locations in the RAM map
-mov a,#$20 : mov !p_clear,a : mov a,#$00 : mov !p_clear+1,a
-mov a,#$0F : mov !n_clear,a
-call memclear
-mov a,#$D0 : mov !p_clear,a : mov a,#$00 : mov !p_clear+1,a
-mov a,#$1F : mov !n_clear,a
-call memclear
-
-; Clear non direct page sound effect RAM ($0391..FF, $0440..BE)
-mov a,#$91 : mov !p_clear,a : mov a,#$03 : mov !p_clear+1,a
-mov a,#$6F : mov !n_clear,a
-call memclear
-mov a,#$40 : mov !p_clear,a : mov a,#$04 : mov !p_clear+1,a
-mov a,#$7F : mov !n_clear,a
+mov !misc0+1,#$02
+mov !misc1+1,#!echoBufferEnd-$0200>>8
 call memclear
 
 ; Set up echo with echo delay = 1
-inc a
-call setUpEcho
+mov a,#$01 : call setUpEcho
 
 ; Disable echo buffer writes
 set5 !flg
@@ -351,3 +317,91 @@ mov $00F2,y : mov $00F3,a
 .ret
 ret
 }
+
+; $1E8B
+receiveDataFromCpu:
+{
+; Data format:
+;     ssss dddd [xx xx...] (data block 0)
+;     ssss dddd [xx xx...] (data block 1)
+;     ...
+;     0000 aaaa
+; Where:
+;     s = data block size in bytes
+;     d = destination address
+;     x = data
+;     a = entry address. Ignored (used by boot ROM for first APU transfer)
+
+; CPU IO 0..1 = AAh BBh
+; Wait until [CPU IO 0] = CCh
+; For each data block:
+;     Destination address = [CPU IO 2..3]
+;     Echo [CPU IO 0]
+;     [CPU IO 1] != 0
+;     Index = 0
+;     For each data byte:
+;         Wait until [CPU IO 0] = index
+;         Echo index back through [CPU IO 0]
+;         Destination address + index = [CPU IO 1]
+;         Increment index
+;         If index = 0:
+;             Destination address += 100h
+;     [CPU IO 0] > index
+; Entry address = [CPU IO 2..3] (ignored)
+; Echo [CPU IO 0]
+; [CPU IO 1] == 0
+
+mov a,#$AA : mov $00F4,a
+mov a,#$BB : mov $00F5,a
+
+-
+mov a,$00F4 : cmp a,#$CC : bne -
+bra .branch_processDataBlock
+
+.loop_dataBlock
+mov y,$00F4 : bne .loop_dataBlock
+
+.loop_dataByte
+cmp y,$00F4 : bne +
+mov a,$00F5
+mov $00F4,y
+mov (!misc0)+y,a : inc y : bne .loop_dataByte
+inc !misc0+1
+bra .loop_dataByte
+
++
+bpl .loop_dataByte
+cmp y,$00F4 : bpl .loop_dataByte
+
+.branch_processDataBlock
+mov a,$00F6 : mov y,$00F7 : movw !misc0,ya
+mov y,$00F4 : mov a,$00F5 : mov $00F4,y
+bne .loop_dataBlock
+
+; Reset CPU IO input latches and enable/reset timer 0
+mov x,#$31 : mov $00F1,x
+ret
+}
+
+; $1E1D
+panningVolumeMultipliers:
+db $00, $01, $03, $07, $0D, $15, $1E, $29, $34, $42, $51, $5E, $67, $6E, $73, $77, $7A, $7C, $7D, $7E, $7F
+
+; $1E32
+echoFirFilters:
+db $7F,$00,$00,$00,$00,$00,$00,$00 ; Sharp echo
+db $58,$BF,$DB,$F0,$FE,$07,$0C,$0C ; Echo + reverb
+db $0C,$21,$2B,$2B,$13,$FE,$F3,$F9 ; Smooth echo
+db $34,$33,$00,$D9,$E5,$01,$FC,$EB ; ???
+
+; $1E52
+dspRegisterAddresses: ; For DSP update
+db $2C, $3C, $0D, $4D, $6C, $4C, $5C, $3D, $2D, $5C
+
+; $1E5C
+directPageAddresses: ; For DSP update
+db !echoVolumeLeft+1, !echoVolumeRight+1, !echoFeedbackVolume, !echoEnableFlags, !flg, !keyOnFlags, !zero, !noiseEnableFlags, !pitchModulationFlags, !keyOffFlags
+
+; $1E66
+pitchTable:
+dw $085F, $08DE, $0965, $09F4, $0A8C, $0B2C, $0BD6, $0C8B, $0D4A, $0E14, $0EEA, $0FCD, $10BE

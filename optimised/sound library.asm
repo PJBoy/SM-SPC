@@ -16,181 +16,194 @@ mov a,#~!bitset : mov (!p_charVoiceMask)+y,a
 endmacro
 
 
-macro ResetSoundChannel(i_sound, i_channel)
+resetSoundIfNoEnabledVoices:
 {
-!enabledVoices                    = !sound<i_sound>_enabledVoices
-!disableByte                      = !sound<i_sound>_channel<i_channel>_disableByte
-!voiceBitset                      = !sound<i_sound>_channel<i_channel>_voiceBitset
-!voiceMask                        = !sound<i_sound>_channel<i_channel>_voiceMask
-!voiceIndex                       = !sound<i_sound>_channel<i_channel>_voiceIndex
-!trackOutputVolumeBackup          = !sound<i_sound>_channel<i_channel>_trackOutputVolumeBackup
-!trackPhaseInversionOptionsBackup = !sound<i_sound>_channel<i_channel>_trackPhaseInversionOptionsBackup
-!updateAdsrSettingsFlag           = !sound<i_sound>_channel<i_channel>_updateAdsrSettingsFlag
+; Requires !i_soundLibrary to be set
 
-mov a,#$FF : mov !disableByte,a
-mov a,#$00 : mov !updateAdsrSettingsFlag,a
-mov a,!enabledVoices : and a,!voiceMask : mov !enabledVoices,a
-mov a,!enableSoundEffectVoices : and a,!voiceMask : mov !enableSoundEffectVoices,a
-mov a,!musicVoiceBitset : or a,!voiceBitset : mov !musicVoiceBitset,a
-mov a,!keyOffFlags : or a,!voiceBitset : mov !keyOffFlags,a
-mov x,!voiceIndex : mov a,!trackInstrumentIndices+x : call setInstrumentSettings
-mov x,!voiceIndex
-mov a,!trackOutputVolumeBackup          : mov !trackOutputVolumes+x,a
-mov a,!trackPhaseInversionOptionsBackup : mov !trackPhaseInversionOptions+x,a
-}
-endmacro
-
-
-macro ProcessSoundChannel(i_sound, i_channel, resetChannel, getNextDataByte, n_nops, doPointlessUnusedCommandCheck)
-{
-!i_instructionList      = !sound<i_sound>_channel<i_channel>_i_instructionList
-!instructionTimer       = !sound<i_sound>_channel<i_channel>_instructionTimer
-!disableByte            = !sound<i_sound>_channel<i_channel>_disableByte
-!voiceBitset            = !sound<i_sound>_channel<i_channel>_voiceBitset
-!voiceMask              = !sound<i_sound>_channel<i_channel>_voiceMask
-!voiceIndex             = !sound<i_sound>_channel<i_channel>_voiceIndex
-!dspIndex               = !sound<i_sound>_channel<i_channel>_dspIndex
-!releaseFlag            = !sound<i_sound>_channel<i_channel>_releaseFlag
-!releaseTimer           = !sound<i_sound>_channel<i_channel>_releaseTimer
-!repeatCounter          = !sound<i_sound>_channel<i_channel>_repeatCounter
-!repeatPoint            = !sound<i_sound>_channel<i_channel>_repeatPoint
-!adsrSettings           = !sound<i_sound>_channel<i_channel>_adsrSettings
-!updateAdsrSettingsFlag = !sound<i_sound>_channel<i_channel>_updateAdsrSettingsFlag
-!soundNote              = !sound<i_sound>_channel<i_channel>_note
-!soundSubnote           = !sound<i_sound>_channel<i_channel>_subnote
-!subnoteDelta           = !sound<i_sound>_channel<i_channel>_subnoteDelta
-!targetNote             = !sound<i_sound>_channel<i_channel>_targetNote
-!pitchSlideFlag         = !sound<i_sound>_channel<i_channel>_pitchSlideFlag
-!legatoFlag             = !sound<i_sound>_channel<i_channel>_legatoFlag
-!pitchSlideLegatoFlag   = !sound<i_sound>_channel<i_channel>_pitchSlideLegatoFlag
-
-mov a,#$FF : cmp a,!disableByte : bne + : jmp ?branch_end : +
-
-dec !instructionTimer : beq + : jmp ?branch_processInstruction_end : +
-mov a,!legatoFlag : beq + : bra ?loop_commands : +
+mov x,!i_soundLibrary
+mov a,!sound_enabledVoices+x : bne +
 mov a,#$00
-mov !pitchSlideFlag,a
-mov !subnoteDelta,a
-mov !targetNote,a
-mov a,#$FF : cmp a,!releaseFlag : beq +
-mov a,!voiceBitset : or a,!keyOffFlags : mov !keyOffFlags,a
-mov a,#$02 : mov !releaseTimer,a
-mov a,#$01 : mov !instructionTimer,a
-mov a,#$FF : mov !releaseFlag,a
+mov !sounds+x,a
+mov !sound_priorities+x,a
+mov !sound_initialisationFlags+x,a
 
 +
-dec !releaseTimer : beq + : jmp ?branch_end : +
-mov a,#$00 : mov !releaseFlag,a
-mov a,!voiceMask : and a,!musicVoiceBitset : mov !musicVoiceBitset,a
-mov a,!voiceMask : and a,!noiseEnableFlags : mov !noiseEnableFlags,a
+ret
+}
 
-?loop_commands
-call <getNextDataByte>
-if <doPointlessUnusedCommandCheck>
-    cmp a,#$FA : bne + : +
-endif
+
+resetSoundChannel:
+{
+;; Parameters:
+;;     X: Global channel index. Range 0..7
+
+; Requires !i_soundLibrary to be set
+
+mov a,!sound_voiceIndices+x : mov !i_voice,a
+
+mov a,#$FF : mov !sound_disableBytes+x,a
+mov a,#$00 : mov !sound_updateAdsrSettingsFlags+x,a
+mov a,!sound_voiceMasks+x : mov x,!i_soundLibrary : and a,!sound_enabledVoices+x : mov !sound_enabledVoices+x,a : mov x,!i_globalChannel
+mov a,!enableSoundEffectVoices : and a,!sound_voiceMasks+x : mov !enableSoundEffectVoices,a
+mov a,!musicVoiceBitset : or a,!sound_voiceBitsets+x : mov !musicVoiceBitset,a
+mov a,!keyOffFlags : or a,!sound_voiceBitsets+x : mov !keyOffFlags,a
+mov x,!i_voice : mov a,!trackInstrumentIndices+x : call setInstrumentSettings : mov x,!i_globalChannel
+mov a,!sound_trackOutputVolumeBackups+x : push a
+mov a,!sound_trackPhaseInversionOptionsBackups+x
+mov x,!i_voice
+mov !trackPhaseInversionOptions+x,a
+pop a : mov !trackOutputVolumes+x,a
+
+jmp resetSoundIfNoEnabledVoices
+}
+
+
+getNextDataByte:
+{
+;; Parameters:
+;;     X: Global channel index. Range 0..7
+push x
+mov x,!i_globalChannel
+
+mov a,!sound_p_instructionListsLow+x : mov y,!sound_p_instructionListsHigh+x : movw !misc0,ya
+mov a,!sound_i_instructionLists+x : mov y,a
+inc a : mov !sound_i_instructionLists+x,a
+mov a,(!misc0)+y
+
+pop x
+ret
+}
+
+
+processSoundChannel:
+{
+;; Parameters:
+;;     X: Global channel index. Range 0..7
+
+; Requires !i_soundLibrary to be set
+; Valid indexed non-DP address mode opcodes are mov/cmp/adc/sbc/and/or/eor
+
+mov a,#$FF : cmp a,!sound_disableBytes+x : bne + : jmp .branch_end : +
+
+mov a,!sound_voiceIndices+x : mov !i_voice,a
+mov a,!sound_instructionTimers+x : dec a : mov !sound_instructionTimers+x,a : beq + : jmp .branch_processInstruction_end : +
+mov a,!sound_legatoFlags+x : beq + : bra .loop_commands : +
+mov a,#$00
+mov !sound_pitchSlideFlags+x,a
+mov !sound_subnoteDeltas+x,a
+mov !sound_targetNotes+x,a
+mov a,#$FF : cmp a,!sound_releaseFlags+x : beq +
+mov a,!sound_voiceBitsets+x : or a,!keyOffFlags : mov !keyOffFlags,a
+mov a,#$02 : mov !sound_releaseTimers+x,a
+mov a,#$01 : mov !sound_instructionTimers+x,a
+mov a,#$FF : mov !sound_releaseFlags+x,a
+
++
+mov a,!sound_releaseTimers+x : dec a : mov !sound_releaseTimers+x,a : beq + : jmp .branch_end : +
+mov a,#$00 : mov !sound_releaseFlags+x,a
+mov a,!sound_voiceMasks+x : and a,!musicVoiceBitset : mov !musicVoiceBitset,a
+mov a,!sound_voiceMasks+x : and a,!noiseEnableFlags : mov !noiseEnableFlags,a
+
+.loop_commands
+call getNextDataByte
 cmp a,#$F9 : bne +
-call <getNextDataByte> : mov !adsrSettings,a
-call <getNextDataByte> : mov !adsrSettings+1,a
-mov a,#$FF : mov !updateAdsrSettingsFlag,a
-jmp ?loop_commands
+call getNextDataByte : mov !sound_adsrSettingsLow+x,a
+call getNextDataByte : mov !sound_adsrSettingsHigh+x,a
+mov a,#$FF : mov !sound_updateAdsrSettingsFlags+x,a
+jmp .loop_commands
 
 +
 cmp a,#$F5 : bne +
-mov !pitchSlideLegatoFlag,a
+mov !sound_pitchSlideLegatoFlags+x,a
 bra ++
 
 +
-cmp a,#$F8 : bne ?branch_pitchSlide_end
-mov a,#$00 : mov !pitchSlideLegatoFlag,a
+cmp a,#$F8 : bne .branch_pitchSlide_end
+mov a,#$00 : mov !sound_pitchSlideLegatoFlags+x,a
 
 ++
-call <getNextDataByte> : mov !subnoteDelta,a
-call <getNextDataByte> : mov !targetNote,a
-mov a,#$FF : mov !pitchSlideFlag,a
-call <getNextDataByte>
-?branch_pitchSlide_end
+call getNextDataByte : mov !sound_subnoteDeltas+x,a
+call getNextDataByte : mov !sound_targetNotes+x,a
+mov a,#$FF : mov !sound_pitchSlideFlags+x,a
+call getNextDataByte
+.branch_pitchSlide_end
 
 cmp a,#$FF : bne +
-call <resetChannel>
-jmp ?branch_end
+call resetSoundChannel
+jmp .branch_end
 
 +
 cmp a,#$FE : bne +
-call <getNextDataByte> : mov !repeatCounter,a
-mov a,!i_instructionList : mov !repeatPoint,a
-call <getNextDataByte>
+call getNextDataByte : mov !sound_repeatCounters+x,a
+mov a,!sound_i_instructionLists+x : mov !sound_repeatPoints+x,a
+call getNextDataByte
 
 +
-cmp a,#$FD : bne ?branch_repeatCommand
-dec !repeatCounter : bne + : jmp ?loop_commands : +
+cmp a,#$FD : bne .branch_repeatCommand
+mov a,!sound_repeatCounters+x : dec a : mov !sound_repeatCounters+x,a : bne + : jmp .loop_commands : +
 
-?loop_repeatCommand
-mov a,!repeatPoint : mov !i_instructionList,a
-call <getNextDataByte>
+.loop_repeatCommand
+mov a,!sound_repeatPoints+x : mov !sound_i_instructionLists+x,a
+call getNextDataByte
 
-?branch_repeatCommand
-cmp a,#$FB : bne + : jmp ?loop_repeatCommand : +
+.branch_repeatCommand
+cmp a,#$FB : bne + : jmp .loop_repeatCommand : +
 cmp a,#$FC : bne +
-mov a,!voiceBitset : or a,!noiseEnableFlags : mov !noiseEnableFlags,a
-jmp ?loop_commands
+mov a,!sound_voiceBitsets+x : or a,!noiseEnableFlags : mov !noiseEnableFlags,a
+jmp .loop_commands
 
 ; Process note instruction
 +
-mov x,!voiceIndex
-call setInstrumentSettings
-call <getNextDataByte> : mov x,!voiceIndex : mov !trackOutputVolumes+x,a
+mov x,!i_voice : call setInstrumentSettings
+mov x,!i_globalChannel : call getNextDataByte
+mov x,!i_voice : mov !trackOutputVolumes+x,a
 mov a,#$00 : mov !trackPhaseInversionOptions+x,a
-call <getNextDataByte> : mov !note+1,a : mov !note,#$00
-call writeDspVoiceVolumes
-call <getNextDataByte>
+
+mov x,!i_globalChannel : call getNextDataByte : mov !panningBias+1,a : mov !panningBias,#$00
+mov x,!i_voice : call writeDspVoiceVolumes
+mov x,!i_globalChannel : call getNextDataByte
 cmp a,#$F6 : beq +
-mov !soundNote,a
-mov a,#$00 : mov !soundSubnote,a
+mov !sound_notes+x,a
+mov a,#$00 : mov !sound_subnotes+x,a
 
 +
-mov y,!soundNote : mov a,!soundSubnote : movw !note,ya
-mov x,!voiceIndex
-call playNoteDirect
-call <getNextDataByte> : mov !instructionTimer,a
-mov a,!updateAdsrSettingsFlag : beq +
-mov a,!dspIndex : or a,#$05 : mov y,a : mov a,!adsrSettings : call writeDspRegisterDirect
-mov a,!dspIndex : or a,#$06 : mov y,a : mov a,!adsrSettings+1 : call writeDspRegisterDirect
+mov a,!sound_notes+x : mov y,a : mov a,!sound_subnotes+x : movw !note,ya : mov x,!i_voice : call playNoteDirect
+mov x,!i_globalChannel : call getNextDataByte : mov !sound_instructionTimers+x,a
+mov a,!sound_updateAdsrSettingsFlags+x : beq +
+mov a,!sound_dspIndices+x : or a,#$05 : mov y,a : mov a,!sound_adsrSettingsLow+x : call writeDspRegisterDirect
+mov a,!sound_dspIndices+x : or a,#$06 : mov y,a : mov a,!sound_adsrSettingsHigh+x : call writeDspRegisterDirect
 
 +
-mov a,!legatoFlag : bne ?branch_processInstruction_end
-mov a,!voiceBitset : or a,!keyOnFlags : mov !keyOnFlags,a
+mov a,!sound_legatoFlags+x : bne .branch_processInstruction_end
+mov a,!sound_voiceBitsets+x : or a,!keyOnFlags : mov !keyOnFlags,a
 
-?branch_processInstruction_end
-rep <n_nops> : nop ; Random NOPs!
-
-mov a,!pitchSlideFlag : cmp a,#$FF : bne ?branch_end
-mov a,!pitchSlideLegatoFlag : beq +
-mov a,#$FF : mov !legatoFlag,a
+.branch_processInstruction_end
+mov a,!sound_pitchSlideFlags+x : cmp a,#$FF : bne .branch_end
+mov a,!sound_pitchSlideLegatoFlags+x : beq +
+mov a,#$FF : mov !sound_legatoFlags+x,a
 
 +
-mov a,!soundNote : cmp a,!targetNote : bcc +
-mov a,!soundSubnote : setc : sbc a,!subnoteDelta : mov !soundSubnote,a : bcs ++
-dec !soundNote
-mov a,!targetNote : cmp a,!soundNote : bne ++
+mov a,!sound_notes+x : cmp a,!sound_targetNotes+x : bcc +
+mov a,!sound_subnotes+x : setc : sbc a,!sound_subnoteDeltas+x : mov !sound_subnotes+x,a : bcs ++
+mov a,!sound_notes+x : dec a : mov !sound_notes+x,a
+mov a,!sound_targetNotes+x : cmp a,!sound_notes+x : bne ++
 mov a,#$00
-mov !pitchSlideFlag,a
-mov !legatoFlag,a
+mov !sound_pitchSlideFlags+x,a
+mov !sound_legatoFlags+x,a
 bra ++
 
 +
-mov a,!subnoteDelta : clrc : adc a,!soundSubnote : mov !soundSubnote,a : bcc ++
-inc !soundNote
-mov a,!targetNote : cmp a,!soundNote : bne ++
+mov a,!sound_subnoteDeltas+x : clrc : adc a,!sound_subnotes+x : mov !sound_subnotes+x,a : bcc ++
+mov a,!sound_notes+x : inc a : mov !sound_notes+x,a
+mov a,!sound_targetNotes+x : cmp a,!sound_notes+x : bne ++
 mov a,#$00
-mov !pitchSlideFlag,a
-mov !legatoFlag,a
+mov !sound_pitchSlideFlags+x,a
+mov !sound_legatoFlags+x,a
 
 ++
-mov a,!soundSubnote : mov y,!soundNote : movw !note,ya
-mov x,!voiceIndex
-call playNoteDirect
+mov a,!sound_notes+x : mov y,a : mov a,!sound_subnotes+x : movw !note,ya
+mov x,!i_voice : call playNoteDirect
 
-?branch_end
+.branch_end
+ret
 }
-endmacro

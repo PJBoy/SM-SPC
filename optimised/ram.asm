@@ -1,327 +1,513 @@
 ; Utility constants for this file
 {
+!n_tracks = 8
 !sound1_n_channels = 4
 !sound2_n_channels = 2
 !sound3_n_channels = 2
+!n_channels = 8
 }
 
-macro generate(prefix, suffix, p_base, n, step)
+!p_ram = 0
+!canInterleaveBytePairArray = 0
+!lastBytePairN = 0
+
+macro declare(name, n)
+{
+    if defined("printRamMap") : print "$", hex(!p_ram), " = \!<name>"
+    if defined("printRamWla") : print "00:", hex(!p_ram), " <name> VAR 1"
+    !<name> #= !p_ram
+    !p_ram #= !p_ram+<n>
+}
+endmacro
+
+macro declare_byte(name)
+{
+    %declare(<name>, 1)
+    !canInterleaveBytePairArray = 0
+}
+endmacro
+
+macro declare_word(name)
+{
+    %declare(<name>, 2)
+    !canInterleaveBytePairArray = 0
+}
+endmacro
+
+macro declare_byteArray(name, n)
+{
+    %declare(<name>, <n>)
+    !canInterleaveBytePairArray = 0
+}
+endmacro
+
+macro declare_wordArray(name, n)
+{
+    %declare(<name>, <n>*2)
+    !canInterleaveBytePairArray = 0
+}
+endmacro
+
+macro declare_bytePairArray(name, n)
+{
+    if !canInterleaveBytePairArray != 0 && <n> == !lastBytePairN
+        !p_ram #= !p_ram-<n>*2+2
+        !canInterleaveBytePairArray = 0
+    else
+        !canInterleaveBytePairArray = 1
+        !lastBytePairN = <n>
+    endif
+
+    %declare(<name>, <n>*2-1)
+}
+endmacro
+
+macro generate(prefix, suffix, n, step, size)
+{
+    !i = 0
+    while !i < <n>
+        if defined("printRamMap") : print "$", hex(!p_ram+!i*<step>), " = \!<prefix>!{i}<suffix>"
+        !{<prefix>!{i}<suffix>} #= !p_ram+!i*<step>
+        !i #= !i+1
+    endif
+    !p_ram #= !p_ram+<size>
+}
+endmacro
+
+macro generate_bytes(prefix, suffix, n)
+{
+    %generate(<prefix>, <suffix>, <n>, 1, <n>)
+}
+endmacro
+
+macro generate_words(prefix, suffix, n)
+{
+    %generate(<prefix>, <suffix>, <n>, 2, <n>*2)
+}
+endmacro
+
+macro generate_bytePairArray(prefix, suffix, n)
+{
+    if !canInterleaveBytePairArray != 0 && <n> == !lastBytePairN
+        !p_ram #= !p_ram-<n>*2+2
+        !canInterleaveBytePairArray = 0
+    else
+        !canInterleaveBytePairArray = 1
+        !lastBytePairN = <n>
+    endif
+
+    %generate(<prefix>, <suffix>, <n>, 2, <n>*2-1)
+}
+endmacro
+
+macro generateIndirect(prefix, suffix, p_base, n, step)
+{
     !i = 0
     while !i < <n>
         !{<prefix>!{i}<suffix>} #= <p_base>+!i*<step>
         !i #= !i+1
     endif
+}
+endmacro
+
+macro generateIndirect_bytes(prefix, suffix, p_base, n)
+{
+    %generateIndirect(<prefix>, <suffix>, <p_base>, <n>, 1)
+}
+endmacro
+
+macro generateIndirect_words(prefix, suffix, p_base, n)
+{
+    %generateIndirect(<prefix>, <suffix>, <p_base>, <n>, 2)
+}
+endmacro
+
+macro generateIndirect_sounds(prefix, suffix, p_base)
+{
+    !{<prefix>1<suffix>} #= <p_base>
+    !{<prefix>2<suffix>} #= <p_base>+4
+    !{<prefix>3<suffix>} #= <p_base>+6
+}
 endmacro
 
 ; CPU IO cache registers
 {
-%generate(cpuIo, _read,      $00, 4, 1)
-%generate(cpuIo, _write,     $04, 4, 1)
-%generate(cpuIo, _read_prev, $08, 4, 1)
+%generate_bytes(cpuIo, _read, 4)
+%generate_bytes(cpuIo, _write, 4)
+%generate_bytes(cpuIo, _read_prev, 4)
 }
 
-!musicTrackStatus = $0C
-; $0D: Unused
-!zero             = $0E
+%declare_byte(musicTrackStatus)
+%declare_word(zero)
 
 ; Temporaries
 {
-!note                = $10
-!panningBias         = $10
-!noteOrPanningBias   = $10
-!signBit             = $12
-!dspVoiceVolumeIndex = $12
-!noteModifiedFlag    = $13
-!misc0               = $14
-!misc1               = $16
+!note #= !p_ram
+!panningBias #= !p_ram
+%declare_word(noteOrPanningBias)
+
+!signBit #= !p_ram
+%declare_byte(dspVoiceVolumeIndex)
+
+%declare_byte(noteModifiedFlag)
+%declare_word(misc0)
+%declare_word(misc1)
 }
 
-!randomNumber            = $18
-!enableSoundEffectVoices = $1A
-!disableNoteProcessing   = $1B
-; $1C..1F: Unused
-!p_return                = $20
-!p_return_word           = $0020 ; Note: specifying mov.w doesn't (currently) generate a word length operand
+%declare_word(randomNumber)
+%declare_byte(enableSoundEffectVoices)
+%declare_byte(disableNoteProcessing)
+%declare_word(p_return)
 
 ; Sound 1
 {
-!sound1_instructionListPointerSet  = $22
-!sound1_p_charVoiceBitset          = $24
-!sound1_p_charVoiceMask            = $26
-!sound1_p_charVoiceIndex           = $28
-!sound1_channel0_p_instructionList = $2A
-!sound1_channel1_p_instructionList = $2C
-!sound1_channel2_p_instructionList = $2E
-}
-
-!trackPointers     = $30
-!p_tracker         = $40
-!trackerTimer      = $42
-!soundEffectsClock = $43
-!trackIndex        = $44
-
-; DSP cache
-{
-!keyOnFlags           = $45
-!keyOffFlags          = $46
-!musicVoiceBitset     = $47
-!flg                  = $48
-!noiseEnableFlags     = $49
-!echoEnableFlags      = $4A
-!pitchModulationFlags = $4B
-}
-
-; Echo
-{
-!echoTimer            = $4C
-!echoDelay            = $4D
-!echoFeedbackVolume   = $4E
-; $4F: Unused
-}
-
-; Music
-{
-!musicTranspose                 = $50
-!musicTrackClock                = $51
-!musicTempo                     = $52
-!dynamicMusicTempoTimer         = $54
-!targetMusicTempo               = $55
-!musicTempoDelta                = $56
-!musicVolume                    = $58
-!dynamicMusicVolumeTimer        = $5A
-!targetMusicVolume              = $5B
-!musicVolumeDelta               = $5C
-!musicVoiceVolumeUpdateBitset   = $5E
-!percussionInstrumentsBaseIndex = $5F
-}
-
-; Echo
-{
-!echoVolumeLeft         = $60
-!echoVolumeRight        = $62
-!echoVolumeLeftDelta    = $64
-!echoVolumeRightDelta   = $66
-!dynamicEchoVolumeTimer = $68
-!targetEchoVolumeLeft   = $69
-!targetEchoVolumeRight  = $6A
-; $6B..6F: Unused
-}
-
-; Track
-{
-!trackNoteTimers                 = $70
-!trackNoteRingTimers             = $71
-!trackRepeatedSubsectionCounters = $80
-; $81..8F: Unused
-!trackDynamicVolumeTimers        = $90
-!trackDynamicPanningTimers       = $91
-!trackPitchSlideTimers           = $A0
-!trackPitchSlideDelayTimers      = $A1
-!trackVibratoDelayTimers         = $B0
-!trackVibratoExtents             = $B1
-!trackTremoloDelayTimers         = $C0
-!trackTremoloExtents             = $C1
+%declare_word(sound1_instructionListPointerSet)
+%declare_word(sound1_p_charVoiceBitset)
+%declare_word(sound1_p_charVoiceMask)
+%declare_word(sound1_p_charVoiceIndex)
 }
 
 ; Sounds
 {
-!sound1_channel3_p_instructionList = $D0
-!p_echoBuffer                      = $D2
-!sound2_instructionListPointerSet  = $D4
-!sound2_p_charVoiceBitset          = $D6
-!sound2_p_charVoiceMask            = $D8
-!sound2_p_charVoiceIndex           = $DA
-!sound2_channel0_p_instructionList = $DC
-!sound2_channel1_p_instructionList = $DE
-!sound3_instructionListPointerSet  = $E0
-!sound3_p_charVoiceBitset          = $E2
-!sound3_p_charVoiceMask            = $E4
-!sound3_p_charVoiceIndex           = $E6
-!sound3_channel0_p_instructionList = $E8
-!sound3_channel1_p_instructionList = $EA
-; $EC: Unused
+%declare_byteArray(sound_p_instructionListsLow,  !n_channels)
+%declare_byteArray(sound_p_instructionListsHigh, !n_channels)
+
+%generateIndirect_sounds(sound, _p_instructionListsLow,  !sound_p_instructionListsLow)
+%generateIndirect_sounds(sound, _p_instructionListsHigh, !sound_p_instructionListsHigh)
+
+%generateIndirect_bytes(sound1_channel, _p_instructionListLow,  !sound1_p_instructionListsLow,  !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _p_instructionListHigh, !sound1_p_instructionListsHigh, !sound1_n_channels)
+%generateIndirect_bytes(sound2_channel, _p_instructionListLow,  !sound2_p_instructionListsLow,  !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _p_instructionListHigh, !sound2_p_instructionListsHigh, !sound2_n_channels)
+%generateIndirect_bytes(sound3_channel, _p_instructionListLow,  !sound3_p_instructionListsLow,  !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _p_instructionListHigh, !sound3_p_instructionListsHigh, !sound3_n_channels)
 }
 
-!p_clear = $EE
-; $F0..FF: IO ports
+%declare_wordArray(trackPointers, !n_tracks)
+%declare_word(p_tracker)
+%declare_byte(trackerTimer)
+%declare_byte(soundEffectsClock)
+%declare_byte(trackIndex)
 
-!trackDynamicVibratoTimers = $100 ; Note: This one is referenced in code via $00 with direct page = $100
+; DSP cache
+{
+%declare_byte(keyOnFlags)
+%declare_byte(keyOffFlags)
+%declare_byte(musicVoiceBitset)
+%declare_byte(flg)
+%declare_byte(noiseEnableFlags)
+%declare_byte(echoEnableFlags)
+%declare_byte(pitchModulationFlags)
+}
 
-!p_stackBegin = $01CF
-; $01D0..FF: Unused
+; Echo
+{
+%declare_byte(echoTimer)
+%declare_byte(echoDelay)
+%declare_byte(echoFeedbackVolume)
+}
 
 ; Music
 {
-!trackNoteLengths                       = $0200
-!trackNoteRingLengths                   = $0201
-!trackNoteVolume                        = $0210
-!trackInstrumentIndices                 = $0211
-!trackInstrumentPitches                 = $0220
-!trackRepeatedSubsectionAddresses       = $0230
-!trackRepeatedSubsectionReturnAddresses = $0240
-; $0250..5F: Unused
-; $0260..6E: Unused
-!trackPitches                           = $0261
-; $0270..7F: Unused
-!trackSlideLengths                      = $0280
-!trackSlideDelays                       = $0281
-!trackSlideDirections                   = $0290
-!trackSlideExtents                      = $0291
-!trackVibratoPhases                     = $02A0
-!trackVibratoRates                      = $02A1
-!trackVibratoDelays                     = $02B0
-!trackDynamicVibratoLengths             = $02B1
-!trackVibratoExtentDeltas               = $02C0
-!trackStaticVibratoExtents              = $02C1
-!trackTremoloPhases                     = $02D0
-!trackTremoloRates                      = $02D1
-!trackTremoloDelays                     = $02E0
-; $02E1..EF: Unused
-!trackTransposes                        = $02F0
-; $02F1..FF: Unused
-!trackVolumes                           = $0300
-!trackVolumeDeltas                      = $0310
-!trackTargetVolumes                     = $0320
-!trackOutputVolumes                     = $0321
-!trackPanningBiases                     = $0330
-!trackPanningBiasDeltas                 = $0340
-!trackTargetPanningBiases               = $0350
-!trackPhaseInversionOptions             = $0351
-!trackSubnotes                          = $0360
-!trackNotes                             = $0361
-!trackNoteDeltas                        = $0370
-!trackTargetNotes                       = $0380
-!trackSubtransposes                     = $0381
+%declare_byte(musicTranspose)
+%declare_byte(musicTrackClock)
+%declare_word(musicTempo)
+%declare_byte(dynamicMusicTempoTimer)
+%declare_byte(targetMusicTempo)
+%declare_word(musicTempoDelta)
+%declare_word(musicVolume)
+%declare_byte(dynamicMusicVolumeTimer)
+%declare_byte(targetMusicVolume)
+%declare_word(musicVolumeDelta)
+%declare_byte(musicVoiceVolumeUpdateBitset)
+%declare_byte(percussionInstrumentsBaseIndex)
 }
 
-!n_clear = $0390
-; $0391: Unused
+; Echo
+{
+%declare_word(echoVolumeLeft)
+%declare_word(echoVolumeRight)
+%declare_word(echoVolumeLeftDelta)
+%declare_word(echoVolumeRightDelta)
+%declare_byte(dynamicEchoVolumeTimer)
+%declare_byte(targetEchoVolumeLeft)
+%declare_byte(targetEchoVolumeRight)
+}
+
+; Track
+{
+%declare_bytePairArray(trackNoteTimers,                 !n_tracks)
+%declare_bytePairArray(trackNoteRingTimers,             !n_tracks)
+%declare_bytePairArray(trackRepeatedSubsectionCounters, !n_tracks)
+%declare_bytePairArray(trackDynamicVolumeTimers,        !n_tracks)
+%declare_bytePairArray(trackDynamicPanningTimers,       !n_tracks)
+%declare_bytePairArray(trackPitchSlideTimers,           !n_tracks)
+%declare_bytePairArray(trackPitchSlideDelayTimers,      !n_tracks)
+%declare_bytePairArray(trackVibratoDelayTimers,         !n_tracks)
+%declare_bytePairArray(trackVibratoExtents,             !n_tracks)
+%declare_bytePairArray(trackTremoloDelayTimers,         !n_tracks)
+%declare_bytePairArray(trackTremoloExtents,             !n_tracks)
+}
+
+; Sounds
+{
+%declare_word(p_echoBuffer)
+%declare_word(sound2_instructionListPointerSet)
+%declare_word(sound2_p_charVoiceBitset)
+%declare_word(sound2_p_charVoiceMask)
+%declare_word(sound2_p_charVoiceIndex)
+%declare_word(sound3_instructionListPointerSet)
+%declare_word(sound3_p_charVoiceBitset)
+%declare_word(sound3_p_charVoiceMask)
+%declare_word(sound3_p_charVoiceIndex)
+}
+
+; $F0..FF: IO ports
+if !p_ram > $F0
+    print "\!p_ram = ",hex(!p_ram)
+    error "Spilled into IO ports"
+endif
+
+!p_ram = $100 : !canInterleaveBytePairArray = 0
+%declare_byte(trackDynamicVibratoTimers) ; Note: This one is referenced in code via $00 with direct page = $100
+
+; Rest of page 1 is stack space
+!p_ram = $0200 : !canInterleaveBytePairArray = 0
+!p_stackBegin #= !p_ram
+
+; Music
+{
+%declare_bytePairArray(trackNoteLengths,                   !n_tracks)
+%declare_bytePairArray(trackNoteRingLengths,               !n_tracks)
+%declare_bytePairArray(trackNoteVolume,                    !n_tracks)
+%declare_bytePairArray(trackInstrumentIndices,             !n_tracks)
+%declare_wordArray(trackInstrumentPitches,                 !n_tracks)
+%declare_wordArray(trackRepeatedSubsectionAddresses,       !n_tracks)
+%declare_wordArray(trackRepeatedSubsectionReturnAddresses, !n_tracks)
+%declare_bytePairArray(trackSlideLengths,                  !n_tracks)
+%declare_bytePairArray(trackSlideDelays,                   !n_tracks)
+%declare_bytePairArray(trackSlideDirections,               !n_tracks)
+%declare_bytePairArray(trackSlideExtents,                  !n_tracks)
+%declare_bytePairArray(trackVibratoPhases,                 !n_tracks)
+%declare_bytePairArray(trackVibratoRates,                  !n_tracks)
+%declare_bytePairArray(trackVibratoDelays,                 !n_tracks)
+%declare_bytePairArray(trackDynamicVibratoLengths,         !n_tracks)
+%declare_bytePairArray(trackVibratoExtentDeltas,           !n_tracks)
+%declare_bytePairArray(trackStaticVibratoExtents,          !n_tracks)
+%declare_bytePairArray(trackTremoloPhases,                 !n_tracks)
+%declare_bytePairArray(trackTremoloRates,                  !n_tracks)
+%declare_bytePairArray(trackTremoloDelays,                 !n_tracks)
+%declare_bytePairArray(trackTransposes,                    !n_tracks)
+%declare_wordArray(trackVolumes,                           !n_tracks)
+%declare_wordArray(trackVolumeDeltas,                      !n_tracks)
+%declare_bytePairArray(trackTargetVolumes,                 !n_tracks)
+%declare_bytePairArray(trackOutputVolumes,                 !n_tracks)
+%declare_wordArray(trackPanningBiases,                     !n_tracks)
+%declare_wordArray(trackPanningBiasDeltas,                 !n_tracks)
+%declare_bytePairArray(trackTargetPanningBiases,           !n_tracks)
+%declare_bytePairArray(trackPhaseInversionOptions,         !n_tracks)
+%declare_bytePairArray(trackSubnotes,                      !n_tracks)
+%declare_bytePairArray(trackNotes,                         !n_tracks)
+%declare_wordArray(trackNoteDeltas,                        !n_tracks)
+%declare_bytePairArray(trackTargetNotes,                   !n_tracks)
+%declare_bytePairArray(trackSubtransposes,                 !n_tracks)
+}
+
+%declare_byte(i_globalChannel)
+%declare_byte(i_voice)
+%declare_byte(i_soundLibrary)
 
 ; Sound 1
 {
-!sound1                                                    = $0392
-!i_sound1                                                  = $0393
-%generate(sound1_channel, _i_instructionList,                $0394, !sound1_n_channels, 1)
-%generate(sound1_channel, _instructionTimer,                 $0398, !sound1_n_channels, 1)
-%generate(sound1_channel, _disableByte,                      $039C, !sound1_n_channels, 1)
-!sound1_i_channel                                          = $03A0
-!sound1_n_voices                                           = $03A1
-!sound1_i_voice                                            = $03A2
-!sound1_remainingEnabledSoundVoices                        = $03A3
-!sound1_initialisationFlag                                 = $03A4
-!sound1_voiceId                                            = $03A5
-%generate(sound1_channel, _voiceBitset,                      $03A6, !sound1_n_channels, 1)
-%generate(sound1_channel, _voiceMask,                        $03AA, !sound1_n_channels, 1)
-!sound1_2i_channel                                         = $03AE
-%generate(sound1_channel, _voiceIndex,                       $03AF, !sound1_n_channels, 1)
-!sound1_enabledVoices                                      = $03B3
-%generate(sound1_channel, _dspIndex,                         $03B4, !sound1_n_channels, 1)
-%generate(sound1_channel, _trackOutputVolumeBackup,          $03B8, !sound1_n_channels, 2)
-%generate(sound1_channel, _trackPhaseInversionOptionsBackup, $03B9, !sound1_n_channels, 2)
-%generate(sound1_channel, _releaseFlag,                      $03C0, !sound1_n_channels, 2)
-%generate(sound1_channel, _releaseTimer,                     $03C1, !sound1_n_channels, 2)
-%generate(sound1_channel, _repeatCounter,                    $03C8, !sound1_n_channels, 1)
-%generate(sound1_channel, _repeatPoint,                      $03CC, !sound1_n_channels, 1)
-%generate(sound1_channel, _adsrSettings,                     $03D0, !sound1_n_channels, 2)
-%generate(sound1_channel, _updateAdsrSettingsFlag,           $03D8, !sound1_n_channels, 1)
-%generate(sound1_channel, _note,                             $03DC, !sound1_n_channels, 7)
-%generate(sound1_channel, _subnote,                          $03DD, !sound1_n_channels, 7)
-%generate(sound1_channel, _subnoteDelta,                     $03DE, !sound1_n_channels, 7)
-%generate(sound1_channel, _targetNote,                       $03DF, !sound1_n_channels, 7)
-%generate(sound1_channel, _pitchSlideFlag,                   $03E0, !sound1_n_channels, 7)
-%generate(sound1_channel, _legatoFlag,                       $03E1, !sound1_n_channels, 7)
-%generate(sound1_channel, _pitchSlideLegatoFlag,             $03E2, !sound1_n_channels, 7)
+%declare_byte(i_sound1)
+%declare_byte(sound1_i_channel)
+%declare_byte(sound1_n_voices)
+%declare_byte(sound1_i_voice)
+%declare_byte(sound1_remainingEnabledSoundVoices)
+%declare_byte(sound1_voiceId)
+%declare_byte(sound1_2i_channel)
 }
 
 ; Sound 2
 {
-!sound2                                                    = $03F8
-!i_sound2                                                  = $03F9
-%generate(sound2_channel, _i_instructionList,                $03FA, !sound2_n_channels, 1)
-%generate(sound2_channel, _instructionTimer,                 $03FC, !sound2_n_channels, 1)
-%generate(sound2_channel, _disableByte,                      $03FE, !sound2_n_channels, 1)
-
-!trackSkipNewNotesFlags = $0400
-; $0401..0F: Unused
-; $0410..3F: Unused
-
-; Sound 2 again
-!sound2_i_channel                                          = $0440
-!sound2_n_voices                                           = $0441
-!sound2_i_voice                                            = $0442
-!sound2_remainingEnabledSoundVoices                        = $0443
-!sound2_initialisationFlag                                 = $0444
-!sound2_voiceId                                            = $0445
-%generate(sound2_channel, _voiceBitset,                      $0446, !sound2_n_channels, 1)
-%generate(sound2_channel, _voiceMask,                        $0448, !sound2_n_channels, 1)
-!sound2_2i_channel                                         = $044A
-%generate(sound2_channel, _voiceIndex,                       $044B, !sound2_n_channels, 1)
-!sound2_enabledVoices                                      = $044D
-%generate(sound2_channel, _dspIndex,                         $044E, !sound2_n_channels, 1)
-%generate(sound2_channel, _trackOutputVolumeBackup,          $0450, !sound2_n_channels, 2)
-%generate(sound2_channel, _trackPhaseInversionOptionsBackup, $0451, !sound2_n_channels, 2)
-%generate(sound2_channel, _releaseFlag,                      $0454, !sound2_n_channels, 2)
-%generate(sound2_channel, _releaseTimer,                     $0455, !sound2_n_channels, 2)
-%generate(sound2_channel, _repeatCounter,                    $0458, !sound2_n_channels, 1)
-%generate(sound2_channel, _repeatPoint,                      $045A, !sound2_n_channels, 1)
-%generate(sound2_channel, _adsrSettings,                     $045C, !sound2_n_channels, 2)
-%generate(sound2_channel, _updateAdsrSettingsFlag,           $0460, !sound2_n_channels, 1)
-%generate(sound2_channel, _note,                             $0462, !sound2_n_channels, 7)
-%generate(sound2_channel, _subnote,                          $0463, !sound2_n_channels, 7)
-%generate(sound2_channel, _subnoteDelta,                     $0464, !sound2_n_channels, 7)
-%generate(sound2_channel, _targetNote,                       $0465, !sound2_n_channels, 7)
-%generate(sound2_channel, _pitchSlideFlag,                   $0466, !sound2_n_channels, 7)
-%generate(sound2_channel, _legatoFlag,                       $0467, !sound2_n_channels, 7)
-%generate(sound2_channel, _pitchSlideLegatoFlag,             $0468, !sound2_n_channels, 7)
+%declare_byte(i_sound2)
+%declare_byte(sound2_i_channel)
+%declare_byte(sound2_n_voices)
+%declare_byte(sound2_i_voice)
+%declare_byte(sound2_remainingEnabledSoundVoices)
+%declare_byte(sound2_voiceId)
+%declare_byte(sound2_2i_channel)
 }
 
 ; Sound 3
 {
-!sound3                                                    = $0470
-!i_sound3                                                  = $0471
-%generate(sound3_channel, _i_instructionList,                $0472, !sound3_n_channels, 1)
-%generate(sound3_channel, _instructionTimer,                 $0474, !sound3_n_channels, 1)
-%generate(sound3_channel, _disableByte,                      $0476, !sound3_n_channels, 1)
-!sound3_i_channel                                          = $0478
-!sound3_n_voices                                           = $0479
-!sound3_i_voice                                            = $047A
-!sound3_remainingEnabledSoundVoices                        = $047B
-!sound3_initialisationFlag                                 = $047C
-!sound3_voiceId                                            = $047D
-%generate(sound3_channel, _voiceBitset,                      $047E, !sound3_n_channels, 1)
-%generate(sound3_channel, _voiceMask,                        $0480, !sound3_n_channels, 1)
-!sound3_2i_channel                                         = $0482
-%generate(sound3_channel, _voiceIndex,                       $0483, !sound3_n_channels, 1)
-!sound3_enabledVoices                                      = $0485
-%generate(sound3_channel, _dspIndex,                         $0486, !sound3_n_channels, 1)
-%generate(sound3_channel, _trackOutputVolumeBackup,          $0488, !sound3_n_channels, 2)
-%generate(sound3_channel, _trackPhaseInversionOptionsBackup, $0489, !sound3_n_channels, 2)
-%generate(sound3_channel, _releaseFlag,                      $048C, !sound3_n_channels, 2)
-%generate(sound3_channel, _releaseTimer,                     $048D, !sound3_n_channels, 2)
-%generate(sound3_channel, _repeatCounter,                    $0490, !sound3_n_channels, 1)
-%generate(sound3_channel, _repeatPoint,                      $0492, !sound3_n_channels, 1)
-%generate(sound3_channel, _adsrSettings,                     $0494, !sound3_n_channels, 2)
-%generate(sound3_channel, _updateAdsrSettingsFlag,           $0498, !sound3_n_channels, 1)
-%generate(sound3_channel, _note,                             $049A, !sound3_n_channels, 7)
-%generate(sound3_channel, _subnote,                          $049B, !sound3_n_channels, 7)
-%generate(sound3_channel, _subnoteDelta,                     $049C, !sound3_n_channels, 7)
-%generate(sound3_channel, _targetNote,                       $049D, !sound3_n_channels, 7)
-%generate(sound3_channel, _pitchSlideFlag,                   $049E, !sound3_n_channels, 7)
-%generate(sound3_channel, _legatoFlag,                       $049F, !sound3_n_channels, 7)
-%generate(sound3_channel, _pitchSlideLegatoFlag,             $04A0, !sound3_n_channels, 7)
+%declare_byte(i_sound3)
+%declare_byte(sound3_i_channel)
+%declare_byte(sound3_n_voices)
+%declare_byte(sound3_i_voice)
+%declare_byte(sound3_remainingEnabledSoundVoices)
+%declare_byte(sound3_voiceId)
+%declare_byte(sound3_2i_channel)
 }
 
-; $04A8: Unused
-!disableProcessingCpuIo2 = $04A9
-; $04AA..B0: Unused
-!i_echoFirFilterSet      = $04B1
-; $04B2..B9: Unused
-!sound3LowHealthPriority = $04BA
-!sound1Priority          = $04BB
-!sound2Priority          = $04BC
-!sound3Priority          = $04BD
-; $04BE..FF: Unused
+; Sounds
+{
+%declare_byteArray(sounds, 3)
+%declare_byteArray(sound_enabledVoices, 3)
+%declare_byteArray(sound_priorities, 3)
+%declare_byteArray(sound_initialisationFlags, 3)
 
+!sound1 = !sounds
+!sound2 = !sounds+1
+!sound3 = !sounds+2
+!sound1_enabledVoices = !sound_enabledVoices
+!sound2_enabledVoices = !sound_enabledVoices+1
+!sound3_enabledVoices = !sound_enabledVoices+2
+!sound1Priority = !sound_priorities
+!sound2Priority = !sound_priorities+1
+!sound3Priority = !sound_priorities+2
+!sound1_initialisationFlag = !sound_initialisationFlags
+!sound2_initialisationFlag = !sound_initialisationFlags+1
+!sound3_initialisationFlag = !sound_initialisationFlags+2
+}
+
+; Sound channels
+{
+
+; The real arrays
+%declare_byteArray(sound_i_instructionLists,                !n_channels)
+%declare_byteArray(sound_instructionTimers,                 !n_channels)
+%declare_byteArray(sound_disableBytes,                      !n_channels)
+%declare_byteArray(sound_voiceBitsets,                      !n_channels)
+%declare_byteArray(sound_voiceMasks,                        !n_channels)
+%declare_byteArray(sound_voiceIndices,                      !n_channels)
+%declare_byteArray(sound_dspIndices,                        !n_channels)
+%declare_byteArray(sound_trackOutputVolumeBackups,          !n_channels)
+%declare_byteArray(sound_trackPhaseInversionOptionsBackups, !n_channels)
+%declare_byteArray(sound_releaseFlags,                      !n_channels)
+%declare_byteArray(sound_releaseTimers,                     !n_channels)
+%declare_byteArray(sound_repeatCounters,                    !n_channels)
+%declare_byteArray(sound_repeatPoints,                      !n_channels)
+%declare_byteArray(sound_adsrSettingsLow,                   !n_channels)
+%declare_byteArray(sound_adsrSettingsHigh,                  !n_channels)
+%declare_byteArray(sound_updateAdsrSettingsFlags,           !n_channels)
+%declare_byteArray(sound_notes,                             !n_channels)
+%declare_byteArray(sound_subnotes,                          !n_channels)
+%declare_byteArray(sound_subnoteDeltas,                     !n_channels)
+%declare_byteArray(sound_targetNotes,                       !n_channels)
+%declare_byteArray(sound_pitchSlideFlags,                   !n_channels)
+%declare_byteArray(sound_legatoFlags,                       !n_channels)
+%declare_byteArray(sound_pitchSlideLegatoFlags,             !n_channels)
+
+; The divisions of the arrays by sound library
+%generateIndirect_sounds(sound, _i_instructionLists,                !sound_i_instructionLists)
+%generateIndirect_sounds(sound, _instructionTimers,                 !sound_instructionTimers)
+%generateIndirect_sounds(sound, _disableBytes,                      !sound_disableBytes)
+%generateIndirect_sounds(sound, _voiceBitsets,                      !sound_voiceBitsets)
+%generateIndirect_sounds(sound, _voiceMasks,                        !sound_voiceMasks)
+%generateIndirect_sounds(sound, _voiceIndices,                      !sound_voiceIndices)
+%generateIndirect_sounds(sound, _dspIndices,                        !sound_dspIndices)
+%generateIndirect_sounds(sound, _trackOutputVolumeBackups,          !sound_trackOutputVolumeBackups)
+%generateIndirect_sounds(sound, _trackPhaseInversionOptionsBackups, !sound_trackPhaseInversionOptionsBackups)
+%generateIndirect_sounds(sound, _releaseFlags,                      !sound_releaseFlags)
+%generateIndirect_sounds(sound, _releaseTimers,                     !sound_releaseTimers)
+%generateIndirect_sounds(sound, _repeatCounters,                    !sound_repeatCounters)
+%generateIndirect_sounds(sound, _repeatPoints,                      !sound_repeatPoints)
+%generateIndirect_sounds(sound, _adsrSettingsLow,                   !sound_adsrSettingsLow)
+%generateIndirect_sounds(sound, _adsrSettingsHigh,                  !sound_adsrSettingsHigh)
+%generateIndirect_sounds(sound, _updateAdsrSettingsFlags,           !sound_updateAdsrSettingsFlags)
+%generateIndirect_sounds(sound, _notes,                             !sound_notes)
+%generateIndirect_sounds(sound, _subnotes,                          !sound_subnotes)
+%generateIndirect_sounds(sound, _subnoteDeltas,                     !sound_subnoteDeltas)
+%generateIndirect_sounds(sound, _targetNotes,                       !sound_targetNotes)
+%generateIndirect_sounds(sound, _pitchSlideFlags,                   !sound_pitchSlideFlags)
+%generateIndirect_sounds(sound, _legatoFlags,                       !sound_legatoFlags)
+%generateIndirect_sounds(sound, _pitchSlideLegatoFlags,             !sound_pitchSlideLegatoFlags)
+
+; The divisions of subarrays by channel for each sound library
+%generateIndirect_bytes(sound1_channel, _i_instructionList,                !sound1_i_instructionLists,                !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _instructionTimer,                 !sound1_instructionTimers,                 !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _disableByte,                      !sound1_disableBytes,                      !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _voiceBitset,                      !sound1_voiceBitsets,                      !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _voiceMask,                        !sound1_voiceMasks,                        !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _voiceIndex,                       !sound1_voiceIndices,                      !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _dspIndex,                         !sound1_dspIndices,                        !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _trackOutputVolumeBackup,          !sound1_trackOutputVolumeBackups,          !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _trackPhaseInversionOptionsBackup, !sound1_trackPhaseInversionOptionsBackups, !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _releaseFlag,                      !sound1_releaseFlags,                      !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _releaseTimer,                     !sound1_releaseTimers,                     !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _repeatCounter,                    !sound1_repeatCounters,                    !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _repeatPoint,                      !sound1_repeatPoints,                      !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _adsrSettingsLow,                  !sound1_adsrSettingsLow,                   !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _adsrSettingsHigh,                 !sound1_adsrSettingsHigh,                  !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _updateAdsrSettingsFlag,           !sound1_updateAdsrSettingsFlags,           !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _note,                             !sound1_notes,                             !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _subnote,                          !sound1_subnotes,                          !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _subnoteDelta,                     !sound1_subnoteDeltas,                     !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _targetNote,                       !sound1_targetNotes,                       !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _pitchSlideFlag,                   !sound1_pitchSlideFlags,                   !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _legatoFlag,                       !sound1_legatoFlags,                       !sound1_n_channels)
+%generateIndirect_bytes(sound1_channel, _pitchSlideLegatoFlag,             !sound1_pitchSlideLegatoFlags,             !sound1_n_channels)
+
+%generateIndirect_bytes(sound2_channel, _i_instructionList,                !sound2_i_instructionLists,                !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _instructionTimer,                 !sound2_instructionTimers,                 !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _disableByte,                      !sound2_disableBytes,                      !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _voiceBitset,                      !sound2_voiceBitsets,                      !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _voiceMask,                        !sound2_voiceMasks,                        !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _voiceIndex,                       !sound2_voiceIndices,                      !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _dspIndex,                         !sound2_dspIndices,                        !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _trackOutputVolumeBackup,          !sound2_trackOutputVolumeBackups,          !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _trackPhaseInversionOptionsBackup, !sound2_trackPhaseInversionOptionsBackups, !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _releaseFlag,                      !sound2_releaseFlags,                      !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _releaseTimer,                     !sound2_releaseTimers,                     !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _repeatCounter,                    !sound2_repeatCounters,                    !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _repeatPoint,                      !sound2_repeatPoints,                      !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _adsrSettingsLow,                  !sound2_adsrSettingsLow,                   !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _adsrSettingsHigh,                 !sound2_adsrSettingsHigh,                  !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _updateAdsrSettingsFlag,           !sound2_updateAdsrSettingsFlags,           !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _note,                             !sound2_notes,                             !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _subnote,                          !sound2_subnotes,                          !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _subnoteDelta,                     !sound2_subnoteDeltas,                     !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _targetNote,                       !sound2_targetNotes,                       !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _pitchSlideFlag,                   !sound2_pitchSlideFlags,                   !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _legatoFlag,                       !sound2_legatoFlags,                       !sound2_n_channels)
+%generateIndirect_bytes(sound2_channel, _pitchSlideLegatoFlag,             !sound2_pitchSlideLegatoFlags,             !sound2_n_channels)
+
+%generateIndirect_bytes(sound3_channel, _i_instructionList,                !sound3_i_instructionLists,                !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _instructionTimer,                 !sound3_instructionTimers,                 !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _disableByte,                      !sound3_disableBytes,                      !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _voiceBitset,                      !sound3_voiceBitsets,                      !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _voiceMask,                        !sound3_voiceMasks,                        !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _voiceIndex,                       !sound3_voiceIndices,                      !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _dspIndex,                         !sound3_dspIndices,                        !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _trackOutputVolumeBackup,          !sound3_trackOutputVolumeBackups,          !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _trackPhaseInversionOptionsBackup, !sound3_trackPhaseInversionOptionsBackups, !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _releaseFlag,                      !sound3_releaseFlags,                      !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _releaseTimer,                     !sound3_releaseTimers,                     !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _repeatCounter,                    !sound3_repeatCounters,                    !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _repeatPoint,                      !sound3_repeatPoints,                      !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _adsrSettingsLow,                  !sound3_adsrSettingsLow,                   !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _adsrSettingsHigh,                 !sound3_adsrSettingsHigh,                  !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _updateAdsrSettingsFlag,           !sound3_updateAdsrSettingsFlags,           !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _note,                             !sound3_notes,                             !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _subnote,                          !sound3_subnotes,                          !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _subnoteDelta,                     !sound3_subnoteDeltas,                     !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _targetNote,                       !sound3_targetNotes,                       !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _pitchSlideFlag,                   !sound3_pitchSlideFlags,                   !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _legatoFlag,                       !sound3_legatoFlags,                       !sound3_n_channels)
+%generateIndirect_bytes(sound3_channel, _pitchSlideLegatoFlag,             !sound3_pitchSlideLegatoFlags,             !sound3_n_channels)
+}
+
+%declare_byte(trackSkipNewNotesFlags)
+
+%declare_byte(disableProcessingCpuIo2)
+%declare_byte(i_echoFirFilterSet)
+%declare_byte(sound3LowHealthPriority)
+
+if !p_ram > $500
+    print "\!p_ram = ",hex(!p_ram)
+    error error "Spilled into echo buffer"
+endif
 !echoBufferBegin = $500
 !echoBufferEnd   = $1500
 

@@ -1,12 +1,7 @@
-; $4703
-goToProcessSound3:
-{
-jmp processSound3
-}
-
-; $4706
 handleCpuIo3:
 {
+mov a,#$02 : mov !i_soundLibrary,a
+
 mov a,!disableProcessingCpuIo2 : beq + : +
 
 mov y,!cpuIo3_read_prev
@@ -15,8 +10,11 @@ mov !cpuIo3_write,a
 cmp y,!cpuIo3_read : bne .branch_change
 
 .branch_noChange
-mov a,!sound3 : bne goToProcessSound3
+mov a,!sound3 : bne +
 ret
+
++
+jmp processSound3
 
 .branch_change
 cmp a,#$00 : beq .branch_noChange
@@ -48,13 +46,12 @@ dw !{sc}1,  !{sc}2,  !{sc}3,  !{sc}4,  !{sc}5,  !{sc}6,  !{sc}7,  !{sc}8,  !{sc}
    !{sc}21, !{sc}22, !{sc}23, !{sc}24, !{sc}25, !{sc}26, !{sc}27, !{sc}28, !{sc}29, !{sc}2A, !{sc}2B, !{sc}2C, !{sc}2D, !{sc}2E, !{sc}2F
 }
 
-; $47D4
 processSound3:
 {
 mov a,#$FF : cmp a,!sound3_initialisationFlag : beq +
 call sound3Initialisation
-mov y,#$00 : mov a,(!sound3_instructionListPointerSet)+y : mov !sound3_channel0_p_instructionList,a : call getSound3ChannelInstructionListPointer : mov !sound3_channel0_p_instructionList+1,a
-call getSound3ChannelInstructionListPointer              : mov !sound3_channel1_p_instructionList,a : call getSound3ChannelInstructionListPointer : mov !sound3_channel1_p_instructionList+1,a
+mov y,#$00 : mov a,(!sound3_instructionListPointerSet)+y : mov !sound3_channel0_p_instructionListLow,a : call getSound3ChannelInstructionListPointer : mov !sound3_channel0_p_instructionListHigh,a
+call getSound3ChannelInstructionListPointer              : mov !sound3_channel1_p_instructionListLow,a : call getSound3ChannelInstructionListPointer : mov !sound3_channel1_p_instructionListHigh,a
 mov a,!sound3_channel0_voiceIndex : call sound3MultiplyBy8 : mov !sound3_channel0_dspIndex,a
 mov a,!sound3_channel1_voiceIndex : call sound3MultiplyBy8 : mov !sound3_channel1_dspIndex,a
 
@@ -67,62 +64,27 @@ mov !sound3_channel0_instructionTimer,y
 mov !sound3_channel1_instructionTimer,y
 
 +
-%ProcessSoundChannel(3, 0, resetSound3Channel0, getNextSound3Channel0DataByte, 0, 1)
-%ProcessSoundChannel(3, 1, resetSound3Channel1, getNextSound3Channel1DataByte, 0, 0)
+mov x,#$00+!sound1_n_channels+!sound2_n_channels : mov !i_globalChannel,x : call processSoundChannel
+mov x,#$01+!sound1_n_channels+!sound2_n_channels : mov !i_globalChannel,x : call processSoundChannel
 
 ret
 }
 
-; $4B86
-resetSound3Channel0: : %ResetSoundChannel(3, 0) : jmp resetSound3IfNoEnabledVoices
+resetSound3Channel0: : mov x,#$00+!sound1_n_channels+!sound2_n_channels : mov !i_globalChannel,x : jmp resetSoundChannel
+resetSound3Channel1: : mov x,#$01+!sound1_n_channels+!sound2_n_channels : mov !i_globalChannel,x : jmp resetSoundChannel
 
-; $4BC9
-resetSound3Channel1: : %ResetSoundChannel(3, 1) : jmp resetSound3IfNoEnabledVoices
-
-; $4C0C
-resetSound3IfNoEnabledVoices:
-{
-mov a,!sound3_enabledVoices : bne +
-mov a,#$00
-mov !sound3,a
-mov !sound3Priority,a
-mov !sound3_initialisationFlag,a
-
-+
-ret
-}
-
-; $4C1D
-getNextSound3Channel0DataByte:
-{
-mov y,!sound3_channel0_i_instructionList : mov a,(!sound3_channel0_p_instructionList)+y : inc !sound3_channel0_i_instructionList
-ret
-}
-
-; $4C26
-getNextSound3Channel1DataByte:
-{
-mov y,!sound3_channel1_i_instructionList : mov a,(!sound3_channel1_p_instructionList)+y : inc !sound3_channel1_i_instructionList
-ret
-}
-
-; $4C2F
 ; Sound 3 channel variable pointers
 {
-; $289A
 sound3ChannelVoiceBitsets:
 dw !sound3_channel0_voiceBitset, !sound3_channel1_voiceBitset
 
-; $28A2
 sound3ChannelVoiceMasks:
 dw !sound3_channel0_voiceMask, !sound3_channel1_voiceMask
 
-; $28AA
 sound3ChannelVoiceIndices:
 dw !sound3_channel0_voiceIndex, !sound3_channel1_voiceIndex
 }
 
-; $4C3B
 sound3Initialisation:
 {
 mov a,#$09 : mov !sound3_voiceId,a
@@ -148,7 +110,7 @@ mov a,#$00 : cmp a,!sound3_n_voices : beq .ret
 dec !sound3_n_voices
 mov a,#$00 : mov x,!sound3_i_channel : mov !sound3_channel0_disableByte+x,a
 inc !sound3_i_channel
-mov a,!sound3_2i_channel : mov x,a : mov y,a
+mov a,!sound3_2i_channel : mov x,a
 mov a,sound3ChannelVoiceBitsets+x : mov !sound3_p_charVoiceBitset,a
 mov a,sound3ChannelVoiceMasks+x   : mov !sound3_p_charVoiceMask,a
 mov a,sound3ChannelVoiceIndices+x : mov !sound3_p_charVoiceIndex,a
@@ -158,8 +120,9 @@ mov a,sound3ChannelVoiceMasks+x   : mov !sound3_p_charVoiceMask+1,a
 mov a,sound3ChannelVoiceIndices+x : mov !sound3_p_charVoiceIndex+1,a
 inc !sound3_2i_channel : inc !sound3_2i_channel
 mov a,!sound3_voiceId : mov !sound3_i_voice,a : dec !sound3_i_voice : clrc : asl !sound3_i_voice
-mov x,!sound3_i_voice : mov a,!trackOutputVolumes+x : mov !sound3_channel0_trackOutputVolumeBackup+y,a
-inc y : mov a,!trackPhaseInversionOptions+x : mov !sound3_channel0_trackOutputVolumeBackup+y,a
+mov x,!sound3_i_voice : mov y,!sound3_i_channel
+mov a,!trackOutputVolumes+x         : mov !sound3_trackOutputVolumeBackups+y,a
+mov a,!trackPhaseInversionOptions+x : mov !sound3_trackOutputVolumeBackups+y,a
 mov y,#$00 : mov a,!sound3_i_voice : mov (!sound3_p_charVoiceIndex)+y,a
 mov a,!sound3_voiceId : call goToJumpTableEntry
 dw .voice0, .voice1, .voice2, .voice3, .voice4, .voice5, .voice6, .voice7
@@ -177,21 +140,18 @@ ret
 .voice0 : %SetVoice(3, 0) : jmp .loop
 }
 
-; $4DC8
 getSound3ChannelInstructionListPointer:
 {
 inc y : mov a,(!sound3_instructionListPointerSet)+y
 ret
 }
 
-; $4DCC
 sound3MultiplyBy8:
 {
 asl a : asl a : asl a
 ret
 }
 
-; $4DD0
 sound3Configurations:
 {
 .sound1
@@ -311,7 +271,6 @@ call nSound3Voices_2_sound3Priority_1 : ret
 call nSound3Voices_1_sound3Priority_0 : ret
 }
 
-; $4E63
 nSound3Voices_1_sound3Priority_0:
 {
 mov a,#$01 : mov !sound3_n_voices,a
@@ -319,7 +278,6 @@ mov a,#$00 : mov !sound3Priority,a
 ret
 }
 
-; $4E6E
 nSound3Voices_2_sound3Priority_0:
 {
 mov a,#$02 : mov !sound3_n_voices,a
@@ -327,7 +285,6 @@ mov a,#$00 : mov !sound3Priority,a
 ret
 }
 
-; $4E79
 nSound3Voices_2_sound3Priority_1:
 {
 mov a,#$02 : mov !sound3_n_voices,a
@@ -335,7 +292,6 @@ mov a,#$01 : mov !sound3Priority,a
 ret
 }
 
-; $4E84
 nSound3Voices_1_sound3Priority_1:
 {
 mov a,#$01 : mov !sound3_n_voices,a
@@ -343,7 +299,6 @@ mov a,#$01 : mov !sound3Priority,a
 ret
 }
 
-; $4E8F
 sound3InstructionLists:
 {
 dw .sound1,  .sound2,  .sound3,  .sound4,  .sound5,  .sound6,  .sound7,  .sound8,  .sound9,  .soundA,  .soundB,  .soundC,  .soundD,  .soundE,  .soundF,  .sound10,\

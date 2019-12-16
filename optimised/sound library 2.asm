@@ -1,20 +1,18 @@
-; $3154
-goToProcessSound2:
-{
-jmp processSound2
-}
-
-; $3157
 handleCpuIo2:
 {
+mov a,#$01 : mov !i_soundLibrary,a
+
 mov y,!cpuIo2_read_prev
 mov a,!cpuIo2_read : mov !cpuIo2_read_prev,a
 mov !cpuIo2_write,a
 cmp y,!cpuIo2_read : bne .branch_change
 
 .branch_noChange
-mov a,!sound2 : bne goToProcessSound2
+mov a,!sound2 : bne +
 ret
+
++
+jmp processSound2
 
 .branch_change
 cmp a,#$00 : beq .branch_noChange
@@ -49,13 +47,12 @@ dw !{sc}1,  !{sc}2,  !{sc}3,  !{sc}4,  !{sc}5,  !{sc}6,  !{sc}7,  !{sc}8,  !{sc}
    !{sc}71, !{sc}72, !{sc}73, !{sc}74, !{sc}75, !{sc}76, !{sc}77, !{sc}78, !{sc}79, !{sc}7A, !{sc}7B, !{sc}7C, !{sc}7D, !{sc}7E, !{sc}7F
 }
 
-; $32AF
 processSound2:
 {
 mov a,#$FF : cmp a,!sound2_initialisationFlag : beq +
 call sound2Initialisation
-mov y,#$00 : mov a,(!sound2_instructionListPointerSet)+y : mov !sound2_channel0_p_instructionList,a : call getSound2ChannelInstructionListPointer : mov !sound2_channel0_p_instructionList+1,a
-call getSound2ChannelInstructionListPointer              : mov !sound2_channel1_p_instructionList,a : call getSound2ChannelInstructionListPointer : mov !sound2_channel1_p_instructionList+1,a
+mov y,#$00 : mov a,(!sound2_instructionListPointerSet)+y : mov !sound2_channel0_p_instructionListLow,a : call getSound2ChannelInstructionListPointer : mov !sound2_channel0_p_instructionListHigh,a
+call getSound2ChannelInstructionListPointer              : mov !sound2_channel1_p_instructionListLow,a : call getSound2ChannelInstructionListPointer : mov !sound2_channel1_p_instructionListHigh,a
 mov a,!sound2_channel0_voiceIndex : call sound2MultiplyBy8 : mov !sound2_channel0_dspIndex,a
 mov a,!sound2_channel1_voiceIndex : call sound2MultiplyBy8 : mov !sound2_channel1_dspIndex,a
 
@@ -68,62 +65,27 @@ mov !sound2_channel0_instructionTimer,y
 mov !sound2_channel1_instructionTimer,y
 
 +
-%ProcessSoundChannel(2, 0, resetSound2Channel0, getNextSound2Channel0DataByte, 6, 1)
-%ProcessSoundChannel(2, 1, resetSound2Channel1, getNextSound2Channel1DataByte, 6, 0)
+mov x,#$00+!sound1_n_channels : mov !i_globalChannel,x : call processSoundChannel
+mov x,#$01+!sound1_n_channels : mov !i_globalChannel,x : call processSoundChannel
 
 ret
 }
 
-; $366D
-resetSound2Channel0: : %ResetSoundChannel(2, 0) : jmp resetSound2IfNoEnabledVoices
+resetSound2Channel0: : mov x,#$00+!sound1_n_channels : mov !i_globalChannel,x : jmp resetSoundChannel
+resetSound2Channel1: : mov x,#$01+!sound1_n_channels : mov !i_globalChannel,x : jmp resetSoundChannel
 
-; $36B0
-resetSound2Channel1: : %ResetSoundChannel(2, 1) : jmp resetSound2IfNoEnabledVoices
-
-; $36F3
-resetSound2IfNoEnabledVoices:
-{
-mov a,!sound2_enabledVoices : bne +
-mov a,#$00
-mov !sound2,a
-mov !sound2Priority,a
-mov !sound2_initialisationFlag,a
-
-+
-ret
-}
-
-; $3704
-getNextSound2Channel0DataByte:
-{
-mov y,!sound2_channel0_i_instructionList : mov a,(!sound2_channel0_p_instructionList)+y : inc !sound2_channel0_i_instructionList
-ret
-}
-
-; $370D
-getNextSound2Channel1DataByte:
-{
-mov y,!sound2_channel1_i_instructionList : mov a,(!sound2_channel1_p_instructionList)+y : inc !sound2_channel1_i_instructionList
-ret
-}
-
-; $3716
 ; Sound 2 channel variable pointers
 {
-; $289A
 sound2ChannelVoiceBitsets:
 dw !sound2_channel0_voiceBitset, !sound2_channel1_voiceBitset
 
-; $28A2
 sound2ChannelVoiceMasks:
 dw !sound2_channel0_voiceMask, !sound2_channel1_voiceMask
 
-; $28AA
 sound2ChannelVoiceIndices:
 dw !sound2_channel0_voiceIndex, !sound2_channel1_voiceIndex
 }
 
-; $3722
 sound2Initialisation:
 {
 mov a,#$09 : mov !sound2_voiceId,a
@@ -147,9 +109,9 @@ dec !sound2_voiceId : beq .ret
 asl !sound2_remainingEnabledSoundVoices : bcs .loop
 mov a,#$00 : cmp a,!sound2_n_voices : beq .ret
 dec !sound2_n_voices
-mov a,#$00 : mov x,!sound2_i_channel : mov !sound2_channel0_disableByte+x,a
+mov a,#$00 : mov x,!sound2_i_channel : mov !sound2_disableBytes+x,a
 inc !sound2_i_channel
-mov a,!sound2_2i_channel : mov x,a : mov y,a
+mov a,!sound2_2i_channel : mov x,a
 mov a,sound2ChannelVoiceBitsets+x : mov !sound2_p_charVoiceBitset,a
 mov a,sound2ChannelVoiceMasks+x   : mov !sound2_p_charVoiceMask,a
 mov a,sound2ChannelVoiceIndices+x : mov !sound2_p_charVoiceIndex,a
@@ -159,8 +121,9 @@ mov a,sound2ChannelVoiceMasks+x   : mov !sound2_p_charVoiceMask+1,a
 mov a,sound2ChannelVoiceIndices+x : mov !sound2_p_charVoiceIndex+1,a
 inc !sound2_2i_channel : inc !sound2_2i_channel
 mov a,!sound2_voiceId : mov !sound2_i_voice,a : dec !sound2_i_voice : clrc : asl !sound2_i_voice
-mov x,!sound2_i_voice : mov a,!trackOutputVolumes+x : mov !sound2_channel0_trackOutputVolumeBackup+y,a
-inc y : mov a,!trackPhaseInversionOptions+x : mov !sound2_channel0_trackOutputVolumeBackup+y,a
+mov x,!sound2_i_voice : mov y,!sound2_i_channel
+mov a,!trackOutputVolumes+x         : mov !sound2_trackOutputVolumeBackups+y,a
+mov a,!trackPhaseInversionOptions+x : mov !sound2_trackOutputVolumeBackups+y,a
 mov y,#$00 : mov a,!sound2_i_voice : mov (!sound2_p_charVoiceIndex)+y,a
 mov a,!sound2_voiceId : call goToJumpTableEntry
 dw .voice0, .voice1, .voice2, .voice3, .voice4, .voice5, .voice6, .voice7
@@ -178,21 +141,18 @@ ret
 .voice0 : %SetVoice(2, 0) : jmp .loop
 }
 
-; $38AF
 getSound2ChannelInstructionListPointer:
 {
 inc y : mov a,(!sound2_instructionListPointerSet)+y
 ret
 }
 
-; $38B3
 sound2MultiplyBy8:
 {
 asl a : asl a : asl a
 ret
 }
 
-; $38B7
 sound2Configurations:
 {
 .sound1
@@ -427,7 +387,6 @@ call nSound2Voices_1_sound2Priority_1 : ret
 call nSound2Voices_2_sound2Priority_0 : ret
 }
 
-; $3987
 nSound2Voices_1_sound2Priority_0:
 {
 mov a,#$01 : mov !sound2_n_voices,a
@@ -435,7 +394,6 @@ mov a,#$00 : mov !sound2Priority,a
 ret
 }
 
-; $3992
 nSound2Voices_1_sound2Priority_1:
 {
 mov a,#$01 : mov !sound2_n_voices,a
@@ -443,7 +401,6 @@ mov a,#$01 : mov !sound2Priority,a
 ret
 }
 
-; $399D
 nSound2Voices_2_sound2Priority_0:
 {
 mov a,#$02 : mov !sound2_n_voices,a
@@ -451,7 +408,6 @@ mov a,#$00 : mov !sound2Priority,a
 ret
 }
 
-; $39A8
 nSound2Voices_2_sound2Priority_1:
 {
 mov a,#$02 : mov !sound2_n_voices,a
@@ -459,7 +415,6 @@ mov a,#$01 : mov !sound2Priority,a
 ret
 }
 
-; $39B3
 sound2InstructionLists:
 {
 dw .sound1,  .sound2,  .sound3,  .sound4,  .sound5,  .sound6,  .sound7,  .sound8,  .sound9,  .soundA,  .soundB,  .soundC,  .soundD,  .soundE,  .soundF,  .sound10,\
