@@ -7,6 +7,9 @@
 math pri on ; Use conventional maths priority (otherwise is strict left-to-right evaluation)
 warnings disable W1018 ; "xkas-style conditional compilation detected. Please use the if command instead. [rep 0]"
 
+!printAramSummary = ""
+if defined("printRamMsl") || defined("printRamMap") : undef printAramSummary
+
 
 ; The SPC engine data block is written directly via the spc700-inline arch,
 ; which handles writing the data block header containing the block size and ARAM destination.
@@ -15,44 +18,64 @@ warnings disable W1018 ; "xkas-style conditional compilation detected. Please us
 lorom
 org $CF8104 ; The actual ROM location the data block is going to be written to
 
-arch spc700-inline
-org $1500 ; In the inline arch, this implies `base $1500` and is used as destination for the data block header
-
 incsrc "ram.asm"
 
-print "$",pc, ": Engine"
+arch spc700-inline
+org !p_end_ram
+
+main_engine:
 incsrc "engine.asm"
 
-print "$",pc, ": Utility"
+main_utility:
 incsrc "utility.asm"
 
-print "$",pc, ": Music"
+main_music:
 incsrc "music.asm"
 
-; Contains macros to generate code that's generic across sound libraries
-incsrc "sound library.asm"
+incsrc "sound library.asm" ; Contains macros to generate code that's generic across sound libraries
 
-print "$",pc, ": Sound library 1"
+main_soundLibrary1:
 incsrc "sound library 1.asm"
 
-print "$",pc, ": Sound library 2"
+main_soundLibrary2:
 incsrc "sound library 2.asm"
 
-print "$",pc, ": Sound library 3"
+main_soundLibrary3:
 incsrc "sound library 3.asm"
 
-print "$",pc, ": Sound library 3 end"
-
-; The trackers are pointed to by external music data, so it needs to stay here for now and can't be modified in any way
-warnpc $530E
-padbyte $00 : pad $CFBF16 ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed
-
-print "$",pc, ": Shared trackers"
+main_sharedTrackers:
 incsrc "shared trackers.asm"
 
-print "$",pc, ": EOF"
+main_eof:
 
-; padbyte $00 : pad $CFC2EA ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed
+if defined("printAramSummary")
+    print "$",hex(!p_end_ram), ": RAM end"
+    print "$",hex(main_engine), ": Engine"
+    print "$",hex(main_utility), ": Utility"
+    print "$",hex(main_music), ": Music"
+    print "$",hex(main_soundLibrary1), ": Sound library 1"
+    print "$",hex(main_soundLibrary2), ": Sound library 2"
+    print "$",hex(main_soundLibrary3), ": Sound library 3"
+    print "$",hex(main_sharedTrackers), ": Shared trackers"
+    print "$",hex(main_eof), ": EOF"
+    print "$",hex(!noteRingLengthTable), ": Note length table"
+    print "$",hex(!instrumentTable), ": Instrument table"
+    print "$",hex(!trackerData), ": Trackers"
+    print "$",hex(!sampleTable), ": Sample table"
+    print "$",hex(!sampleData_echoBuffer), ": Sample data / echo buffer"
+    print ""
+    
+    ; These are the options to pass to repoint.py
+    print " --p_spcEngine=",hex(main_engine),\
+          " --p_sharedTrackers=",hex(main_sharedTrackers),\
+          " --p_noteLengthTable=",hex(!noteRingLengthTable),\
+          " --p_instrumentTable=",hex(!instrumentTable),\
+          " --p_trackers=",hex(!trackerData),\
+          " --p_sampleTable=",hex(!sampleTable),\
+          " --p_sampleData=",hex(!sampleData_echoBuffer)
+endif
+
+padbyte $00 : pad $CFC2EA ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed
 warnpc $56E2
 
 ; The inline arch writes a terminator data block, which we don't want. The below is reverting that

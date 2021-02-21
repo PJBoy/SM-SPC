@@ -1,3 +1,4 @@
+; $1500
 main:
 {
 .initialisation
@@ -5,9 +6,17 @@ main:
 ; The page 0 is clear, except for $00; page 1 has the stack. Clear all the rest of RAM
 movw $00,ya
 
-mov !misc0+1,#$02
-mov !misc1+1,#!echoBufferEnd-$0200>>8
+; Clear RAM between stack and SPC engine
+mov !misc0+1,#$0200>>8
+mov !misc1+1,#main-$0200>>8
+mov !misc1,#main-$0200
 call memclear
+
+; Clear echo buffer (disabled because this region has been merged with sample data)
+;mov !misc0+1,#$800>>8
+;mov !misc1+1,#!echoBufferEnd-$800>>8
+;mov !misc1,#0
+;call memclear
 
 ; Set up echo with echo delay = 1
 mov a,#$01 : call setUpEcho

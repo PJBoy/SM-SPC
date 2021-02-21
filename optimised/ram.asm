@@ -14,7 +14,7 @@
 macro declare(name, n)
 {
     if defined("printRamMap") : print "$", hex(!p_ram), " = \!<name>"
-    if defined("printRamWla") : print "00:", hex(!p_ram), " <name> VAR 1"
+    if defined("printRamMsl") : print "SPCRAM:", hex(!p_ram), ":<name>"
     !<name> #= !p_ram
     !p_ram #= !p_ram+<n>
 }
@@ -67,6 +67,7 @@ macro generate(prefix, suffix, n, step, size)
     !i = 0
     while !i < <n>
         if defined("printRamMap") : print "$", hex(!p_ram+!i*<step>), " = \!<prefix>!{i}<suffix>"
+        if defined("printRamMsl") : print "SPCRAM:", hex(!p_ram+!i*<step>), ":<prefix>!{i}<suffix>"
         !{<prefix>!{i}<suffix>} #= !p_ram+!i*<step>
         !i #= !i+1
     endif
@@ -268,8 +269,9 @@ if !p_ram > $F0
     error "Spilled into IO ports"
 endif
 
+; Note: This one is referenced in code via $00 with direct page = $100
 !p_ram = $100 : !canInterleaveBytePairArray = 0
-%declare_byte(trackDynamicVibratoTimers) ; Note: This one is referenced in code via $00 with direct page = $100
+%declare_bytePairArray(trackDynamicVibratoTimers, !n_tracks)
 
 ; Rest of page 1 is stack space
 !p_ram = $0200 : !canInterleaveBytePairArray = 0
@@ -311,6 +313,7 @@ endif
 %declare_wordArray(trackNoteDeltas,                        !n_tracks)
 %declare_bytePairArray(trackTargetNotes,                   !n_tracks)
 %declare_bytePairArray(trackSubtransposes,                 !n_tracks)
+%declare_bytePairArray(trackSkipNewNotesFlags,             !n_tracks)
 }
 
 %declare_byte(i_globalChannel)
@@ -373,7 +376,6 @@ endif
 
 ; Sound channels
 {
-
 ; The real arrays
 %declare_byteArray(sound_i_instructionLists,                !n_channels)
 %declare_byteArray(sound_instructionTimers,                 !n_channels)
@@ -498,33 +500,27 @@ endif
 %generateIndirect_bytes(sound3_channel, _pitchSlideLegatoFlag,             !sound3_pitchSlideLegatoFlags,             !sound3_n_channels)
 }
 
-%declare_byte(trackSkipNewNotesFlags)
-
 %declare_byte(disableProcessingCpuIo2)
 %declare_byte(i_echoFirFilterSet)
 %declare_byte(sound3LowHealthPriority)
 
-if !p_ram > $500
-    print "\!p_ram = ",hex(!p_ram)
-    error error "Spilled into echo buffer"
-endif
-!echoBufferBegin = $500
-!echoBufferEnd   = $1500
+!p_end_ram #= !p_ram
 
-; $1500..56E1: SPC engine
-; $56E2..57FF: Unused
+; $43E..3854: SPC engine
+!p_ram = $3855
 
-!noteRingLengthTable = $5800
-!noteVolumeTable     = $5808
-; $5818..1F: Unused
+%declare_byteArray(noteRingLengthTable, 8)
+%declare_byteArray(noteVolumeTable, $10)
+%declare_byteArray(instrumentTable, $EA)
+%declare_byteArray(trackerData, $FF9)
 
-!trackerData = $5820
-; $6819..6BFF: Unused
+; Must be 100h aligned
+!p_ram #= !p_ram+$100-1
+!p_ram #= !p_ram-!p_ram%$100
+%declare_byteArray(sampleTable, $A0)
 
-!instrumentTable = $6C00
-; $6CEA..FF: Unused
+!p_ram #= !sampleTable+$100
+!sampleDataBegin #= !p_ram
+%declare_byteArray(sampleData_echoBuffer, $10000-!p_ram)
 
-!sampleTable = $6D00
-; $6DA0..FF: Unused
-
-; $6E00..FFFF: Sample data
+!echoBufferEnd = $10000

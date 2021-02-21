@@ -621,8 +621,8 @@ mov a,!flg : or a,#$20 : mov y,#$6C : call writeDspRegisterDirect
 mov a,!echoDelay : mov y,#$7D : call writeDspRegisterDirect
 
 .branch_noChange
-; DSP echo buffer address = $1500 - [echo delay] * 800h
-asl a : asl a : asl a : eor a,#$FF : setc : adc a,#$15
+; DSP echo buffer address = $10000 - [echo delay] * 800h
+asl a : asl a : asl a : eor a,#$FF : inc a ;: setc : adc a,#!echoBufferEnd>>8
 mov y,#$6D
 jmp writeDspRegisterDirect
 }
