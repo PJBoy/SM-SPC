@@ -15,16 +15,27 @@ org = lambda address: f'{formatLong(address)}             '
 indent = '                        '
 
 
-argparser = argparse.ArgumentParser(description = 'Print Super Metroid music data.')
-argparser.add_argument('rom_in',  type = argparse.FileType('rb'),  help = 'Filepath to Super Metroid ROM')
-argparser.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to Super Metroid ROM')
+argparser = argparse.ArgumentParser(description = 'Repoint Super Metroid music data.')
+
+subparsers = argparser.add_subparsers(dest = 'file_type', help='sub-command help')
+parser_a = subparsers.add_parser('rom', help='a help')
+parser_a.add_argument('rom_in',  type = argparse.FileType('rb'),  help = 'Filepath to input ROM')
+parser_a.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
+parser_b = subparsers.add_parser('nspc', help='a help')
+parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepath to input NSPC')
+parser_b.add_argument('rom_out', type = argparse.FileType('wb'), help = 'Filepath to output NSPC')
+parser_b = subparsers.add_parser('nspctest', help='a help')
+parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepath to input NSPC')
+parser_b.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
+
 argparser.add_argument('--p_spcEngine',       type = lambda n: int(n, 0x10), help = 'New SPC engine ARAM pointer')
 argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), help = 'New shared trackers ARAM pointer')
 argparser.add_argument('--p_noteLengthTable', type = lambda n: int(n, 0x10), help = 'New note length table ARAM pointer')
 argparser.add_argument('--p_instrumentTable', type = lambda n: int(n, 0x10), help = 'New instrument table ARAM pointer')
-argparser.add_argument('--p_trackers',        type = lambda n: int(n, 0x10), help = 'New trackers ARAM pointer')
 argparser.add_argument('--p_sampleTable',     type = lambda n: int(n, 0x10), help = 'New sample table ARAM pointer')
 argparser.add_argument('--p_sampleData',      type = lambda n: int(n, 0x10), help = 'New sample data ARAM pointer')
+argparser.add_argument('--p_p_trackers',      type = lambda n: int(n, 0x10), help = 'Pointer to write trackers pointer to')
+
 args = argparser.parse_args()
 rom_in = args.rom_in
 rom_out = args.rom_out
@@ -42,7 +53,7 @@ class AramStream:
 
     def peek(self, n):
         if n > len(self.data):
-            raise RuntimeError(f'Unable to read {n} bytes from {len(self.data)} byte buffer')
+            raise RuntimeError(f'Unable to read {n} bytes from {len(self.data)} byte buffer (p_aram = ${self.p_aram:04X})')
 
         return self.data[:n]
 
@@ -95,19 +106,29 @@ class MusicData:
 
     class SpcEngine:
         "Boring class that opaquely holds the data it's given and its destination address"
+        
         def __init__(self, p_blockHeader, data):
             self.p_blockHeader = p_blockHeader
             self.blockSize = len(data.data)
             self.p_aram = data.p_aram
-            self.data = data.data
+            self.data = data.read(self.blockSize)
 
-        def repoint(self, p_aram):
+        def repoint(self, p_aram, size):
             self.p_aram = p_aram
+            self.blockSize = size
+            self.data = self.data[:size]
 
         def write(self, data):
             data.writeInt(self.blockSize, 2)
             data.writeInt(self.p_aram, 2)
             data.write(self.data)
+
+        def pjlog(self):
+            blockSize = f'{self.blockSize:04X}'
+            p_aram = f'{self.p_aram:04X}'
+            
+            print('; Main SPC engine')
+            print(f'{org(self.p_blockHeader)}dw {blockSize}, {p_aram}, ...')
 
     class NoteLengthTable:
         '''
@@ -194,6 +215,7 @@ class MusicData:
                 there are repeated subsections referenced by the tracks themselves (via command EFh),
                 and some unreferenced track sections to account for
             '''
+            
             class Track:
                 '''
                     A track is a list of one byte entries that are note lengths, notes, a tie, a rest, or commands.
@@ -712,7 +734,7 @@ class MusicData:
 
                     def pjlog(self):
                         data = f'{self.commandId:02X},{self.timer:02X},{self.left:02X},{self.right:02X},'
-                        print(f'{data:13}; Dynamic echo volume after {formatValue(self.delay)} tics with target echo volume left = {formatValue(self.left)} and target echo volume right = {formatValue(self.right)}')
+                        print(f'{data:13}; Dynamic echo volume after {formatValue(self.timer)} tics with target echo volume left = {formatValue(self.left)} and target echo volume right = {formatValue(self.right)}')
 
                 class PitchSlide:
                     def __init__(self, data):
@@ -853,15 +875,6 @@ class MusicData:
 
                     self.subsectionPointers = {command.p_subsection for command in self.commands if isinstance(command, self.RepeatSubsection)}
 
-                def repoint(self, p_aram):
-                    diff = p_aram - self.p_aram
-                    self.p_aram += diff
-
-                    self.p_trackSet += diff
-                    for command in self.commands:
-                        if isinstance(command, self.RepeatSubsection):
-                            command.repoint(command.p_subsection + diff)
-
                 def write(self, data):
                     for command in self.commands:
                         command.write(data)
@@ -890,105 +903,232 @@ class MusicData:
                         command.pjlog()
 
                     print('}')
-
-            def __init__(self, i_tracker, p_snes, data):
-                self.p_snes = p_snes
-                self.i_tracker = i_tracker
-                self.p_aram = data.p_aram
-
-                # Process tracker commands
-                self.commands = []
-                self.destinationPointers = {self.p_aram}
-                trackSetPointers = set()
-                while True:
-                    p_aram = data.p_aram
+                
+                def size(self):
+                    data = AramStream(0, [])
+                    self.write(data)
+                    return data.p_aram
+            
+            class Command:
+                type_trackSetPointer = 0
+                type_command = 1
+                type_goto = 2
+                
+                def __init__(self, data):
+                    self.p_aram = data.p_aram
+                    
                     datum = data.readInt(2)
                     if datum >= 0x100:
                         # Track set pointer
-                        self.commands += [[p_aram, [datum]]]
-                        trackSetPointers |= {datum}
+                        self.type = self.type_trackSetPointer
+                        self.p_trackSet = datum
                     elif datum in (0, 0x80, 0x81):
                         # Command
-                        self.commands += [[p_aram, [datum]]]
-                        if datum == 0:
-                            break
+                        self.type = self.type_command
+                        self.command = datum
                     else:
                         # Timer + destination
-                        p_destination = data.readInt(2)
-                        self.commands += [[p_aram, [datum, p_destination]]]
-                        self.destinationPointers |= {p_destination}
+                        self.type = self.type_goto
+                        self.timer = datum
+                        self.p_destination = data.readInt(2)
+                
+                def write(self, data):
+                    if self.type == self.type_trackSetPointer:
+                        data.writeInt(self.p_trackSet, 2)
+                    elif self.type == self.type_command:
+                        data.writeInt(self.command, 2)
+                    else: # self.type == self.type_goto:
+                        data.writeInt(self.timer, 2)
+                        data.writeInt(self.p_destination, 2)
+                
+                def size(self):
+                    if self.type == self.type_goto:
+                        return 4
+                    
+                    return 2
+            
+            '''
+                p_snes    -> int ; Pointer to tracker data in SNES ROM (used for pjlog)
+                p_aram    -> int ; Pointer to tracker data in ARAM (used for pjlog)
+                i_tracker -> int ; Index of tracker in trackers list (used for pjlog)
+                
+                commands         -> [Command, ...]          ; List of tracker commands
+                trackSetPointers -> {int, ...}              ; Set of track set pointers (can point outside of first data block)
+                trackSets        -> [[int, [int] * 8], ...] ; List of track pointers grouped by track set pointer
+                tracks           -> [Track, ...]            ; List of tracks (including repeated subsections and unused tracks)
+            '''
+            
+            def _processTrackerCommands(self, data):
+                'Read commands until zero terminator. Also gather the set of track set pointers'
+                
+                self.commands = []
+                trackSetPointers = set()
+                while data.p_aram not in trackSetPointers:
+                    command = self.Command(data)
+                    self.commands += [command]
+                    if command.type == self.Command.type_command and command.command == 0:
+                        break
+                    elif command.type == self.Command.type_trackSetPointer:
+                        trackSetPointers |= {command.p_trackSet}
 
-                # Read track sets
-                self.trackSets = []
+                # Recording this so we can link up trackers from other APU data blocks
+                self.trackSetPointers = trackSetPointers
+            
+            def _readTrackSets(self, data):
+                '''
+                    Read track sets.
+                    This function just reads track sets from `data`, it doesn't synchronise with `self.trackSetPointers` in any way.
+                '''
+            
+                trackSets = []
                 while True:
-                    previousTrackPointers = [p_track for [_, trackPointers] in self.trackSets for p_track in trackPointers if p_track]
+                    # There's no size or terminator for track sets,
+                    # so we just keep reading track sets until we fall into track data
+                    previousTrackPointers = [pointer for [_, trackPointers] in trackSets for pointer in trackPointers if pointer]
                     if previousTrackPointers and data.p_aram >= min(previousTrackPointers):
                         break
 
                     p_trackSet = data.p_aram
                     trackPointers = [data.readInt(2) for _ in range(8)]
-                    self.trackSets += [[p_trackSet, trackPointers]]
-
-                # Process tracks
+                    trackSets += [[p_trackSet, trackPointers]]
+                
+                return trackSets
+            
+            def _processTracks(self, data, trackSets, p_nextTrackSet):
+                'Process tracks'
+                
+                # Gather initial set of tracks to process from the track sets, record their metadata for self.Track's ctor
                 trackPointersQueue = {}
-                for [p_trackSet, trackPointers] in self.trackSets:
-                    for (i_track, p_track) in enumerate(trackPointers):
-                        if p_track != 0:
-                            trackPointersQueue |= {p_track: (i_track, p_trackSet, i_tracker, False, False)}
-
-                self.tracks = []
+                for [p_trackSet, trackPointers] in trackSets:
+                    for (i_track, trackPointer) in enumerate(trackPointers):
+                        if trackPointer:
+                            trackPointersQueue |= {trackPointer: (i_track, p_trackSet, self.i_tracker, False)}
+                
+                tracks = []
                 while trackPointersQueue:
-                    p_track = min(trackPointersQueue.keys())
-                    (i_track, p_trackSet, i_tracker, isRepeatedSubsection, isUnusedSection) = trackPointersQueue[p_track]
-                    del trackPointersQueue[p_track]
+                    trackPointer = min(trackPointersQueue.keys())
+                    (i_track, p_trackSet, i_tracker, isRepeatedSubsection) = trackPointersQueue[trackPointer]
+                    del trackPointersQueue[trackPointer]
 
-                    if p_track != data.p_aram:
-                        raise RuntimeError(f'Unexpected track data: actual ${p_track:X} != expected ${data.p_aram:X}')
+                    if trackPointer != data.p_aram:
+                        raise RuntimeError(f'Unexpected track data: actual ${trackPointer:X} != expected ${data.p_aram:X}')
 
                     if trackPointersQueue:
-                        p_end_track = min(trackPointersQueue)
+                        trackEndPointer = min(trackPointersQueue.keys())
                     else:
-                        p_end_track = p_track + len(data.data)
+                        trackEndPointer = trackPointer + len(data.data)
 
-                    trackData = AramStream(p_track, data.read(p_end_track - p_track))
+                    trackData = AramStream(data.p_aram, data.read(trackEndPointer - trackPointer))
 
-                    track = self.Track(i_track, p_trackSet, i_tracker, isRepeatedSubsection, isUnusedSection, p_track - self.p_aram + self.p_snes, trackData)
-                    self.tracks += [track]
-                    trackPointersQueue |= {p_subsection: (i_track, p_trackSet, i_tracker, True, False) for p_subsection in track.subsectionPointers}
+                    track = self.Track(i_track, p_trackSet, i_tracker, isRepeatedSubsection, False, trackPointer - self.p_aram + self.p_snes, trackData)
+                    tracks += [track]
+                    
+                    trackPointersQueue |= {p_subsection: (i_track, p_trackSet, i_tracker, True) for p_subsection in track.subsectionPointers}
                     if trackData.data:
-                        self.tracks += [self.Track(0, 0, 0, False, True, trackData.p_aram - self.p_aram + self.p_snes, trackData)]
+                        tracks += [self.Track(0, 0, 0, False, True, trackData.p_aram - self.p_aram + self.p_snes, trackData)]
+                
+                return tracks
+            
+            def __init__(self, i_tracker, p_snes, data):
+                self.p_snes = p_snes
+                self.i_tracker = i_tracker
+                self.p_aram = data.p_aram
+                
+                self._processTrackerCommands(data)
+                
+                self.trackSets = []
+                self.tracks = []
+                while data.data:
+                    trackSets = self._readTrackSets(data)
+                    p_nextTrackSet = min(p_trackSet for p_trackSet in self.trackSetPointers | {data.p_aram + len(data.data)} if p_trackSet > data.p_aram)
+                    tracks = self._processTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)), trackSets, p_nextTrackSet)
+                    
+                    self.trackSets += trackSets
+                    self.tracks += tracks
+
+                if data.data:
+                    raise RuntimeError(f'Leftover tracker data: ${data.p_aram:X}')
+
+            def addTrackSet(self, data):
+                while data.data:
+                    trackSets = self._readTrackSets(data)
+                    p_nextTrackSet = min(p_trackSet for p_trackSet in self.trackSetPointers | {data.p_aram + len(data.data)} if p_trackSet > data.p_aram)
+                    tracks = self._processTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)), trackSets, p_nextTrackSet)
+                    
+                    self.trackSets += trackSets
+                    self.tracks += tracks
 
                 if data.data:
                     raise RuntimeError(f'Leftover tracker data: ${data.p_aram:X}')
 
             def repoint(self, p_aram):
-                diff = p_aram - self.p_aram
-                self.p_aram += diff
-
-                for (i_command, [_, commandData]) in enumerate(self.commands):
-                    self.commands[i_command][0] += diff
-                    if commandData[0] >= 0x100:
-                        # Track set pointer
-                        commandData[0] += diff
-                    elif commandData[0] not in (0, 0x80, 0x81):
-                        # Timer + destination
-                        commandData[1] += diff
-
-                for (i_trackSet, [_, trackPointers]) in enumerate(self.trackSets):
-                    self.trackSets[i_trackSet][0] += diff
-                    for i in range(len(trackPointers)):
-                        if trackPointers[i] != 0:
-                            trackPointers[i] += diff
-
-                self.destinationPointers = {p + diff for p in self.destinationPointers}
-
+                self.p_aram = p_aram
+                
+                oldTrackSetPointers = [trackSet[0] for trackSet in self.trackSets]
+                oldCommandPointers = [command.p_aram for command in self.commands]
+                oldTrackPointers = [track.p_aram for track in self.tracks]
+                
+                commandListSize = sum(command.size() for command in self.commands)
+                p_aram += commandListSize
+                
+                # Repoint track sets
+                for trackSet in self.trackSets:
+                    trackSet[0] = p_aram
+                    p_aram += 0x10
+                
+                p_aram_tracks = p_aram
+                
+                # Repoint commands and track set pointers
+                p_aram = self.p_aram
+                for command in self.commands:
+                    command.p_aram = p_aram
+                    if command.type == self.Command.type_trackSetPointer:
+                        if command.p_trackSet not in oldTrackSetPointers:
+                            raise RuntimeError(f"Bad track set pointer: ${command.p_trackSet:04X} not in {[f'${p:04X}' for p in oldTrackSetPointers]}")
+                            
+                        command.p_trackSet = self.trackSets[oldTrackSetPointers.index(command.p_trackSet)][0]
+                    
+                    p_aram += command.size()
+                    
+                # Repoint command goto targets
+                for command in self.commands:
+                    if command.type == self.Command.type_goto:
+                        if command.p_destination not in oldCommandPointers:
+                            raise RuntimeError("Bad command goto target pointer")
+                            
+                        command.p_destination = self.commands[oldCommandPointers.index(command.p_destination)].p_aram
+                
+                # Repoint tracks
+                p_aram = p_aram_tracks
                 for track in self.tracks:
-                    track.repoint(track.p_aram + diff)
+                    track.p_aram = p_aram
+                    p_aram += track.size()
+                    if track.p_trackSet != 0:
+                        track.p_trackSet = self.trackSets[oldTrackSetPointers.index(track.p_trackSet)][0] # for pjlog
+                
+                # Repoint track pointers
+                for trackSet in self.trackSets:
+                    for (i_track, p_track) in enumerate(trackSet[1]):
+                        if p_track == 0:
+                            continue
+                            
+                        if p_track not in oldTrackPointers:
+                            raise RuntimeError(f"Bad track pointer: ${p_track:04X} not in {[f'${p:04X}' for p in oldTrackPointers]}")
+                            
+                        trackSet[1][i_track] = self.tracks[oldTrackPointers.index(p_track)].p_aram
+                
+                # Repoint subsection pointers
+                for track in self.tracks:
+                    for command in track.commands:
+                        if isinstance(command, self.Track.RepeatSubsection):
+                            if command.p_subsection not in oldTrackPointers:
+                                raise RuntimeError("Bad track subsection pointer")
+                            
+                            command.p_subsection = self.tracks[oldTrackPointers.index(command.p_subsection)].p_aram
 
             def write(self, data):
-                for [_, commandData] in self.commands:
-                    for datum in commandData:
-                        data.writeInt(datum, 2)
+                for command in self.commands:
+                    command.write(data)
 
                 for [_, trackPointers] in self.trackSets:
                     for p_track in trackPointers:
@@ -1002,22 +1142,30 @@ class MusicData:
                     snes_address = hex2snes(address - self.p_aram + snes2hex(self.p_snes))
                     return f'${snes_address >> 16:02X}:{snes_address & 0xFFFF:04X}/${address:04X}       '
 
+                destinationPointers = {self.p_aram} | {command.p_destination for command in self.commands if command.type == self.Command.type_goto}
+                
                 commandListFragments = []
                 commandListFragment = []
-                for [p_aram, commandData] in self.commands:
-                    if p_aram in self.destinationPointers and commandListFragment:
+                for command in self.commands:
+                    if command.p_aram in destinationPointers and commandListFragment:
                         commandListFragments += [f',\n{indent}'.join(commandListFragment)]
                         commandListFragment = []
 
-                    commandListFragment += [','.join(f'{datum:04X}' for datum in commandData)]
+                    data = AramStream(0, [])
+                    command.write(data)
+                    data = [data.readInt(2) for _ in range(len(data.data) // 2)]
+                    commandListFragment += [','.join(f'{datum:04X}' for datum in data)]
 
                 if commandListFragment:
                     commandListFragments += [f',\n{indent}'.join(commandListFragment)]
+                
+                if len(destinationPointers) != len(commandListFragments):
+                    raise RuntimeError("len(destinationPointers) != len(commandListFragments)")
 
                 trackSets = [(p_trackSet, ', '.join(f'{p_track:04X}' for p_track in trackPointers)) for [p_trackSet, trackPointers] in self.trackSets]
 
                 print(f'; Tracker {self.i_tracker} commands')
-                for (p_aram, commandListFragment) in zip(sorted(self.destinationPointers), commandListFragments):
+                for (p_aram, commandListFragment) in zip(sorted(destinationPointers), commandListFragments):
                     print(f'{org_aram(p_aram)}dw {commandListFragment}')
 
                 print()
@@ -1033,14 +1181,16 @@ class MusicData:
             self.p_blockHeader = p_blockHeader
             self.blockSize = len(data.data)
             self.p_aram = data.p_aram
-
-            # Read tracker pointers
+            
+            # Read tracker pointers, keep them about before self.trackers doesn't include the shared tracker pointers
             self.trackerPointers = []
             while data.p_aram not in self.trackerPointers:
                 self.trackerPointers += [data.readInt(2)]
+                #print(f'self.trackerPointers[-1] = ${self.trackerPointers[-1]:04X}')
 
             trackerPointers_sorted = sorted(self.trackerPointers + [self.p_aram + self.blockSize])
-            trackerEndPointers = {trackerPointers_sorted[i]: trackerPointers_sorted[i + 1] for i in range(len(trackerPointers_sorted) - 1)}
+            trackerEndPointers = {begin: end for (begin, end) in zip(trackerPointers_sorted[:-1], trackerPointers_sorted[1:])}
+            #trackerEndPointers = {trackerPointers_sorted[i]: trackerPointers_sorted[i + 1] for i in range(len(trackerPointers_sorted) - 1)}
 
             # Process trackers
             self.trackers = []
@@ -1060,19 +1210,22 @@ class MusicData:
         def repoint(self, p_aram):
             diff = p_aram - self.p_aram
             self.p_aram += diff
+            
+            # TODO: modify to make trackers contiguous instead of naively using diff
 
-            for i in range(len(self.trackerPointers)):
-                if self.trackerPointers[i] >= self.p_aram:
-                    self.trackerPointers[i] += diff
+            for (i_tracker, p_tracker) in enumerate(self.trackerPointers):
+                if p_tracker >= 0x5800:
+                    self.trackerPointers[i_tracker] = p_tracker + diff
 
             for tracker in self.trackers:
                 tracker.repoint(tracker.p_aram + diff)
 
         def repointSharedTrackers(self, p_aram):
             diff = p_aram - 0x530E
-            for i in range(len(self.trackerPointers)):
-                if self.trackerPointers[i] < self.p_aram:
-                    self.trackerPointers[i] += diff
+
+            for (i_tracker, p_tracker) in enumerate(self.trackerPointers):
+                if p_tracker < 0x5800:
+                    self.trackerPointers[i_tracker] = p_tracker + diff
 
         def write(self, data):
             data.writeInt(self.blockSize, 2)
@@ -1099,7 +1252,7 @@ class MusicData:
             print(f'{org(self.p_blockHeader)}dw {blockSize}, {p_aram},')
             print()
             print('; Tracker pointers')
-            print(f'{indent}{trackerPointers}')
+            print(f'{org_aram(self.p_aram)}dw {trackerPointers}')
             print()
             for tracker in self.trackers:
                 tracker.pjlog()
@@ -1304,7 +1457,7 @@ class MusicData:
             p_blockHeader = hex2snes(rom_in.tell())
             blockSize = int.from_bytes(rom_in.read(2), 'little')
             p_aram = int.from_bytes(rom_in.read(2), 'little')
-            #print(f'Found SPC block {formatLong(p_blockHeader)}: ({formatValue(blockSize)}, ${p_aram:02X})')
+            #print(f'Found SPC block {formatLong(p_blockHeader)}: ({formatValue(blockSize):>5}, ${p_aram:04X})')
             if blockSize == 0:
                 break
 
@@ -1313,26 +1466,65 @@ class MusicData:
 
         self.p_eof = hex2snes(rom_in.tell() - 4)
 
-        def init_spcEngine(p_blockHeader, data):
+        def init_spcEngine(p_blockHeader, data, i_dataBlock):
+            if args.file_type != 'rom':
+                return
+                
+            if self.spcEngine is not None:
+                raise RuntimeError("Duplicate SPC engine")
+                
             self.spcEngine = MusicData.SpcEngine(p_blockHeader, data)
+            self.blocks |= {i_dataBlock: self.spcEngine}
 
-        def init_noteLengthTable(p_blockHeader, data):
+        def init_noteLengthTable(p_blockHeader, data, i_dataBlock):
+            if self.noteLengthTable is not None:
+                raise RuntimeError("Duplicate note length table")
+                
             self.noteLengthTable = MusicData.NoteLengthTable(p_blockHeader, data)
+            self.blocks |= {i_dataBlock: self.noteLengthTable}
 
-        def init_trackers(p_blockHeader, data):
+        def init_trackers(p_blockHeader, data, i_dataBlock):
+            if self.trackers is not None:
+                raise RuntimeError("Duplicate trackers")
+                
             self.trackers = MusicData.Trackers(p_blockHeader, data)
+            self.blocks |= {i_dataBlock: self.trackers}
 
-        def init_instrumentTable(p_blockHeader, data):
+        def init_instrumentTable(p_blockHeader, data, i_dataBlock):
+            if self.instrumentTable is not None:
+                raise RuntimeError("Duplicate instrument table")
+                
             self.instrumentTable = MusicData.InstrumentTable(p_blockHeader, data)
+            self.blocks |= {i_dataBlock: self.instrumentTable}
 
-        def init_sampleTable(p_blockHeader, data):
+        def init_sampleTable(p_blockHeader, data, i_dataBlock):
+            if self.sampleTable is not None:
+                raise RuntimeError("Duplicate sample table")
+                
             self.sampleTable = MusicData.SampleTable(p_blockHeader, data)
+            self.blocks |= {i_dataBlock: self.sampleTable}
 
-        def init_sampleData(p_blockHeader, data):
+        def init_sampleData(p_blockHeader, data, i_dataBlock):
+            if self.sampleData is not None:
+                raise RuntimeError(f"Duplicate sample data: old: ${self.sampleData.p_aram:04X}, new: ${data.p_aram:04X}")
+                
             if self.sampleTable is None:
                 raise RuntimeError("Sample data with no sample table")
 
             self.sampleData = MusicData.SampleData(p_blockHeader, data, self.sampleTable)
+            self.blocks |= {i_dataBlock: self.sampleData}
+        
+        def handle_extra(p_blockHeader, data, i_dataBlock):
+            if self.trackers is not None:
+                blockSize = len(data.data)
+                for tracker in self.trackers.trackers:
+                    if data.p_aram in tracker.trackSetPointers:
+                        tracker.addTrackSet(data)
+                        break
+                else:
+                    return
+                    
+                self.trackers.blockSize += blockSize
 
         aramRegions = (
             (0,      0x5800,  init_spcEngine),
@@ -1340,24 +1532,40 @@ class MusicData:
             (0x5820, 0x6C00,  init_trackers),
             (0x6C00, 0x6D00,  init_instrumentTable),
             (0x6D00, 0x6E00,  init_sampleTable),
-            (0x6E00, 0x10000, init_sampleData) # Depends on sample table
+            (0x6E00, 0xB600,  init_sampleData), # Depends on sample table
+            (0xB600, 0x10000, handle_extra)
         )
-
+        
+        # HACK: If tracker pointers are stored in a different block than the tracker data, merge the two blocks
+        for (i_dataBlock_pointers, (p_blockHeader_pointers, data_pointers)) in enumerate(dataBlocks):
+            if data_pointers.p_aram == 0x5828 and len(data_pointers.data) < 8:
+                break
+        
+        if i_dataBlock_pointers != len(dataBlocks):
+            for (i_dataBlock_data, (p_blockHeader_data, data_data)) in enumerate(dataBlocks):
+                if data_data.p_aram == 0x5830:
+                    print(f'Merging ${data_pointers.p_aram:04X} with ${data_data.p_aram:04X}')
+                    dataBlocks[i_dataBlock_pointers] = (p_blockHeader_pointers, AramStream(data_pointers.p_aram, data_pointers.data + [0] * (8 - len(data_pointers.data)) + data_data.data))
+                    del dataBlocks[i_dataBlock_data]
+                    break
+        
+        self.blocks = {}
         for (p_aram_begin, p_aram_end, init) in aramRegions:
-            for (p_blockHeader, data) in dataBlocks:
-                if p_aram_begin <= data.p_aram < p_aram_end:
-                    init(p_blockHeader, data)
+            for (i_dataBlock, (p_blockHeader, data)) in enumerate(dataBlocks):
+                if data.data and p_aram_begin <= data.p_aram < p_aram_end:
+                    init(p_blockHeader, data, i_dataBlock)
+                    
+        for (p_blockHeader, data) in dataBlocks:
+            if len(data.data) != 0:
+                print(f'Data block not (fully) processed: ${data.p_aram:04X} ({formatLong(p_blockHeader)}), {formatValue(len(data.data))} bytes remaining')
 
     def repoint(self):
         if self.spcEngine is not None:
-            self.spcEngine.p_aram = args.p_spcEngine
+            self.spcEngine.repoint(args.p_spcEngine, args.p_noteLengthTable - args.p_spcEngine)
             self.trackers.repointSharedTrackers(args.p_sharedTrackers)
 
         if self.noteLengthTable is not None:
             self.noteLengthTable.repoint(self.noteLengthTable.p_aram + args.p_noteLengthTable - 0x5800)
-
-        if self.trackers is not None:
-            self.trackers.repoint(self.trackers.p_aram + args.p_trackers - 0x5820)
 
         if self.instrumentTable is not None:
             self.instrumentTable.repoint(self.instrumentTable.p_aram + args.p_instrumentTable - 0x6C00)
@@ -1367,27 +1575,37 @@ class MusicData:
 
         if self.sampleData is not None:
             self.sampleData.repoint(self.sampleData.p_aram + args.p_sampleData - 0x6E00)
+            
+        p_trackers = self.sampleData.p_aram + self.sampleData.blockSize
+        if self.trackers is not None:
+            self.trackers.repoint(self.trackers.p_aram + p_trackers - 0x5820)
 
-    def write(self, p_rom):
+    def write(self, p_rom): # need to repoint music pointer table
         data = AramStream(0, [])
-
-        if self.spcEngine is not None:
-            self.spcEngine.write(data)
-
-        if self.instrumentTable is not None:
-            self.instrumentTable.write(data)
 
         if self.noteLengthTable is not None:
             self.noteLengthTable.write(data)
 
-        if self.trackers is not None:
-            self.trackers.write(data)
+        if self.instrumentTable is not None:
+            self.instrumentTable.write(data)
 
         if self.sampleTable is not None:
             self.sampleTable.write(data)
 
         if self.sampleData is not None:
             self.sampleData.write(data)
+
+        if self.trackers is not None:
+            self.trackers.write(data)
+
+        if self.spcEngine is not None:
+            self.spcEngine.write(data)
+        
+        # Write out location of p_trackers (newly required by engine change)
+        p_trackers = self.sampleData.p_aram + self.sampleData.blockSize
+        data.writeInt(2, 2)
+        data.writeInt(args.p_p_trackers, 2)
+        data.writeInt(p_trackers, 2)
 
         # SPC data terminator: 0000 dddd where d is the jump target for the SPC engine specifically and ignored otherwise
         data.writeInt(0, 2)
@@ -1398,29 +1616,14 @@ class MusicData:
 
         rom_out.seek(p_rom)
         rom_out.write(bytes(data.data))
+        return p_rom + len(data.data)
 
     def pjlog(self):
         print(f';;; {formatLong(hex2snes(self.address))}: {self.name} ;;;')
         print('{')
-        if self.instrumentTable is not None:
-            self.instrumentTable.pjlog()
-            print()
-
-        if self.noteLengthTable is not None:
-            self.noteLengthTable.pjlog()
-            print()
-
-        if self.trackers is not None:
-            self.trackers.pjlog()
-            print()
-
-        if self.sampleTable is not None:
-            self.sampleTable.pjlog()
-            print()
-
-        if self.sampleData is not None:
-            self.sampleData.pjlog()
-            print()
+        for i, block in sorted(self.blocks.items()):
+            #print(i)
+            block.pjlog()
 
         print('; EOF')
         print(f'{org(self.p_eof)}dw 0000, 1500') # $1500 is potentially inaccurate
@@ -1429,39 +1632,59 @@ class MusicData:
 
 
 music = [
-    (0xCF_8000, 'SPC engine'),
-    (0xD0_E20D, 'Title sequence'),
-    (0xD1_B62A, 'Empty Crateria'),
-    (0xD2_88CA, 'Lower Crateria'),
-    (0xD2_D9B6, 'Upper Crateria'),
-    (0xD3_933C, 'Green Brinstar'),
-    (0xD3_E812, 'Red Brinstar'),
-    (0xD4_B86C, 'Upper Norfair'),
-    (0xD4_F420, 'Lower Norfair'),
-    (0xD5_C844, 'Maridia'),
-    (0xD6_98B7, 'Tourian'),
-    (0xD6_EF9D, 'Mother Brain'),
-    (0xD7_BF73, 'Boss fight 1'),
-    (0xD8_99B2, 'Boss fight 2'),
-    (0xD8_EA8B, 'Miniboss fight'),
-    (0xD9_B67B, 'Ceres'),
-    (0xD9_F5DD, 'Wrecked Ship'),
-    (0xDA_B650, 'Zebes boom'),
-    (0xDA_D63B, 'Intro'),
-    (0xDB_A40F, 'Death'),
-    (0xDB_DF4F, 'Credits'),
-    (0xDC_AF6C, '"The last Metroid is in captivity"'),
-    (0xDC_FAC7, '"The galaxy is at peace"'),
-    (0xDD_B104, 'Shitroid (same as boss fight 2)'),
-    (0xDE_81C1, 'Samus theme (same as upper Crateria)')
+    'SPC engine',
+    'Title sequence',
+    'Empty Crateria',
+    'Lower Crateria',
+    'Upper Crateria',
+    'Green Brinstar',
+    'Red Brinstar',
+    'Upper Norfair',
+    'Lower Norfair',
+    'Maridia',
+    'Tourian',
+    'Mother Brain',
+    'Boss fight 1',
+    'Boss fight 2',
+    'Miniboss fight',
+    'Ceres',
+    'Wrecked Ship',
+    'Zebes boom',
+    'Intro',
+    'Death',
+    'Credits',
+    '"The last Metroid is in captivity"',
+    '"The galaxy is at peace"',
+    'Shitroid (same as boss fight 2)',
+    'Samus theme (same as upper Crateria)'
 ]
 
-#music = [
-#    (0xDF_8005, 'Unused. Boss fight 2 / Shitroid - alternate'),
-#    (0xDF_8513, 'Unused. Upper Crateria / Samus theme - higher pitched version')
-#]
-
-for (p_musicData, musicName) in music:
-    musicData = MusicData(snes2hex(p_musicData), musicName)
+if args.file_type == 'rom':
+    p_rom = snes2hex(0xCF_8000)
+    for (i_music, musicName) in enumerate(music):
+        rom_in.seek(snes2hex(0x8F_E7E1) + i_music * 3)
+        p_musicData = int.from_bytes(rom_in.read(3), 'little')
+        rom_out.seek(snes2hex(0x8F_E7E1) + i_music * 3)
+        rom_out.write(int.to_bytes(hex2snes(p_rom), 3, 'little'))
+        
+        musicData = MusicData(snes2hex(p_musicData), musicName)
+        musicData.repoint()
+        if p_musicData == 0xCF_8000:
+            #musicData.pjlog()
+            pass
+            
+        p_rom = musicData.write(p_rom)
+elif args.file_type == 'nspc':
+    musicData = MusicData(0, "Custom NSPC")
     musicData.repoint()
-    musicData.write(snes2hex(p_musicData))
+    print(f'Max echo time = {(0x1_0000 - (musicData.trackers.p_aram + musicData.trackers.blockSize)) // 0x800} frames')
+    #musicData.pjlog()
+    p_rom = musicData.write(0)
+else: # args.file_type == 'nspctest':
+    rom_out.seek(snes2hex(0x8F_E7E1) + 6 * 3)
+    p_musicData = int.from_bytes(rom_out.read(3), 'little')
+
+    musicData = MusicData(0, "Custom NSPC")
+    musicData.repoint()
+    print(f'Max echo time = {(0x1_0000 - (musicData.trackers.p_aram + musicData.trackers.blockSize)) // 0x800} frames')
+    musicData.write(snes2hex(p_musicData)) # Overwrite red brinstar

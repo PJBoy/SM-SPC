@@ -28,8 +28,8 @@ loadNewMusicTrack:
 
 mov !cpuIo0_write,a
 
-; Tracker pointer = [$5820 + ([A] - 1) * 2]
-asl a : mov x,a : mov a,!trackerData-2+1+x : mov y,a : mov a,!trackerData-2+x : movw !p_tracker,ya
+; Tracker pointer = [[!p_trackerData] + ([A] - 1) * 2]
+dec a : asl a : mov y,a : mov a,(!p_trackerData)+y : mov x,a : inc y : mov a,(!p_trackerData)+y : mov y,a : mov a,x : movw !p_tracker,ya
 
 ; Music track status = new music track loaded
 mov !musicTrackStatus,#$02

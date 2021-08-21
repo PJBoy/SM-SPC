@@ -389,6 +389,17 @@ bne .loop_dataBlock
 
 ; Reset CPU IO input latches and enable/reset timer 0
 mov x,#$31 : mov $00F1,x
+
+; Write shared tracker pointers to new tracker data location
+mov y,#$00
+warnings push
+warnings disable W1006 ; Warning about loading 8-bit size limit for mov (pending fix in asar trunk)
+mov a,#musicTrack1 : mov (!p_trackerData)+y,a : inc y : mov a,#musicTrack1>>8 : mov (!p_trackerData)+y,a : inc y
+mov a,#musicTrack2 : mov (!p_trackerData)+y,a : inc y : mov a,#musicTrack2>>8 : mov (!p_trackerData)+y,a : inc y
+mov a,#musicTrack3 : mov (!p_trackerData)+y,a : inc y : mov a,#musicTrack3>>8 : mov (!p_trackerData)+y,a : inc y
+mov a,#musicTrack4 : mov (!p_trackerData)+y,a : inc y : mov a,#musicTrack4>>8 : mov (!p_trackerData)+y,a
+warnings pull
+
 ret
 }
 

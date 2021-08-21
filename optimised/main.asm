@@ -60,19 +60,20 @@ if defined("printAramSummary")
     print "$",hex(main_eof), ": EOF"
     print "$",hex(!noteRingLengthTable), ": Note length table"
     print "$",hex(!instrumentTable), ": Instrument table"
-    print "$",hex(!trackerData), ": Trackers"
     print "$",hex(!sampleTable), ": Sample table"
-    print "$",hex(!sampleData_echoBuffer), ": Sample data / echo buffer"
+    print "$",hex(!sampleData), ": Sample data / trackers / echo buffer"
     print ""
     
     ; These are the options to pass to repoint.py
-    print " --p_spcEngine=",hex(main_engine),\
-          " --p_sharedTrackers=",hex(main_sharedTrackers),\
-          " --p_noteLengthTable=",hex(!noteRingLengthTable),\
-          " --p_instrumentTable=",hex(!instrumentTable),\
-          " --p_trackers=",hex(!trackerData),\
-          " --p_sampleTable=",hex(!sampleTable),\
-          " --p_sampleData=",hex(!sampleData_echoBuffer)
+    print \
+        "REPOINT:",\
+        " --p_spcEngine=",hex(main_engine),\
+        " --p_sharedTrackers=",hex(main_sharedTrackers),\
+        " --p_noteLengthTable=",hex(!noteRingLengthTable),\
+        " --p_instrumentTable=",hex(!instrumentTable),\
+        " --p_sampleTable=",hex(!sampleTable),\
+        " --p_sampleData=",hex(!sampleData),\
+        " --p_p_trackers=",hex(!p_trackerData)
 endif
 
 padbyte $00 : pad $CFC2EA ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed

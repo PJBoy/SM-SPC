@@ -186,6 +186,7 @@ endmacro
 
 %declare_wordArray(trackPointers, !n_tracks)
 %declare_word(p_tracker)
+%declare_word(p_trackerData)
 %declare_byte(trackerTimer)
 %declare_byte(soundEffectsClock)
 %declare_byte(trackIndex)
@@ -506,13 +507,12 @@ endif
 
 !p_end_ram #= !p_ram
 
-; $43E..3854: SPC engine
-!p_ram = $3855
+; $43E..3881: SPC engine
+!p_ram = $3882
 
 %declare_byteArray(noteRingLengthTable, 8)
 %declare_byteArray(noteVolumeTable, $10)
 %declare_byteArray(instrumentTable, $EA)
-%declare_byteArray(trackerData, $FF9)
 
 ; Must be 100h aligned
 !p_ram #= !p_ram+$100-1
@@ -521,6 +521,8 @@ endif
 
 !p_ram #= !sampleTable+$100
 !sampleDataBegin #= !p_ram
-%declare_byteArray(sampleData_echoBuffer, $10000-!p_ram)
+%declare_byteArray(sampleData, $10000-!p_ram)
+
+; Trackers float around here somewhere
 
 !echoBufferEnd = $10000
