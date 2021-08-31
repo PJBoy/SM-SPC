@@ -612,7 +612,7 @@ dw ..voice0
               $FE,$00, $06,$40,$0A,$AA,$F0, $FB,\
               $FF
 
-; Sound 18h: Ambient sound in Red Brinstar mainstreet
+; Sound 18h: Beacon
 .sound18
 dw ..voice0
 ..voice0 : db $0B,$20,$0A,$8C,$03, $0B,$30,$0A,$8C,$03, $0B,$40,$0A,$8C,$03, $0B,$50,$0A,$8C,$03, $0B,$60,$0A,$8C,$03, $0B,$70,$0A,$8C,$03, $0B,$80,$0A,$8C,$03, $0B,$60,$0A,$8C,$03, $0B,$50,$0A,$8C,$03, $0B,$40,$0A,$8C,$03, $0B,$30,$0A,$8C,$03, $FF

@@ -5,8 +5,7 @@ The vanilla directory contains the source code for generating a byte-for-byte co
 
 The main directory is reserved for customisations/optimisations to the engine.
 
-The assembler used by this project is currently asar: https://github.com/RPGHacker/asar
-Note that asar is imperfect, and might be switched out for a fork in the forseeable future.
+The assembler used by this project is currently (thedopefish's fork of) asar: https://github.com/thedopefish/asar
 
 The Super Metroid SPC engine was both disassembled and rewritten in source form by myself.
 The original disassembly (with line addresses and comments) can be viewed here: http://patrickjohnston.org/ASM/ROM%20data/Super%20Metroid/SPC%20disassembly.asm
