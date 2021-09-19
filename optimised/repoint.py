@@ -994,36 +994,40 @@ class MusicData:
                 
                 return trackSets
             
-            def _processTracks(self, data, trackSets, p_nextTrackSet):
+            def _processTracks(self, data, trackSets):
                 'Process tracks'
                 
                 # Gather initial set of tracks to process from the track sets, record their metadata for self.Track's ctor
-                trackPointersQueue = {}
+                self.trackPointersQueue = {}
                 for [p_trackSet, trackPointers] in trackSets:
                     for (i_track, trackPointer) in enumerate(trackPointers):
                         if trackPointer:
-                            trackPointersQueue |= {trackPointer: (i_track, p_trackSet, self.i_tracker, False)}
+                            self.trackPointersQueue |= {trackPointer: (i_track, p_trackSet, self.i_tracker, False)}
+                
+                return self._resumeProcessTracks(data)
+                
+            def _resumeProcessTracks(self, data):
+                'Resume process tracks'
                 
                 tracks = []
-                while trackPointersQueue:
-                    trackPointer = min(trackPointersQueue.keys())
-                    (i_track, p_trackSet, i_tracker, isRepeatedSubsection) = trackPointersQueue[trackPointer]
-                    del trackPointersQueue[trackPointer]
+                while self.trackPointersQueue:
+                    if not data.data:
+                        return tracks
+
+                    trackPointer = min(self.trackPointersQueue.keys())
+                    (i_track, p_trackSet, i_tracker, isRepeatedSubsection) = self.trackPointersQueue[trackPointer]
+                    del self.trackPointersQueue[trackPointer]
 
                     if trackPointer != data.p_aram:
                         raise RuntimeError(f'Unexpected track data: actual ${trackPointer:X} != expected ${data.p_aram:X}')
-
-                    if trackPointersQueue:
-                        trackEndPointer = min(trackPointersQueue.keys())
-                    else:
-                        trackEndPointer = trackPointer + len(data.data)
-
+                        
+                    trackEndPointer = min(list(self.trackPointersQueue.keys()) + [trackPointer + len(data.data)])
                     trackData = AramStream(data.p_aram, data.read(trackEndPointer - trackPointer))
 
                     track = self.Track(i_track, p_trackSet, i_tracker, isRepeatedSubsection, False, trackPointer - self.p_aram + self.p_snes, trackData)
                     tracks += [track]
                     
-                    trackPointersQueue |= {p_subsection: (i_track, p_trackSet, i_tracker, True) for p_subsection in track.subsectionPointers}
+                    self.trackPointersQueue |= {p_subsection: (i_track, p_trackSet, i_tracker, True) for p_subsection in track.subsectionPointers}
                     if trackData.data:
                         tracks += [self.Track(0, 0, 0, False, True, trackData.p_aram - self.p_aram + self.p_snes, trackData)]
                 
@@ -1038,22 +1042,19 @@ class MusicData:
                 
                 self.trackSets = []
                 self.tracks = []
-                while data.data:
-                    trackSets = self._readTrackSets(data)
-                    p_nextTrackSet = min(p_trackSet for p_trackSet in self.trackSetPointers | {data.p_aram + len(data.data)} if p_trackSet > data.p_aram)
-                    tracks = self._processTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)), trackSets, p_nextTrackSet)
-                    
-                    self.trackSets += trackSets
-                    self.tracks += tracks
-
-                if data.data:
-                    raise RuntimeError(f'Leftover tracker data: ${data.p_aram:X}')
+                self.trackPointersQueue = {}
+                self.addTrackSet(data)
 
             def addTrackSet(self, data):
+                if self.trackPointersQueue:
+                    p_nextTrackSet = min(p_trackSet for p_trackSet in self.trackSetPointers | {data.p_aram + len(data.data)} if p_trackSet > data.p_aram)
+                    tracks = self._resumeProcessTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)))
+                    self.tracks += tracks
+                
                 while data.data:
                     trackSets = self._readTrackSets(data)
                     p_nextTrackSet = min(p_trackSet for p_trackSet in self.trackSetPointers | {data.p_aram + len(data.data)} if p_trackSet > data.p_aram)
-                    tracks = self._processTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)), trackSets, p_nextTrackSet)
+                    tracks = self._processTracks(AramStream(data.p_aram, data.read(p_nextTrackSet - data.p_aram)), trackSets)
                     
                     self.trackSets += trackSets
                     self.tracks += tracks
@@ -1518,7 +1519,7 @@ class MusicData:
             if self.trackers is not None:
                 blockSize = len(data.data)
                 for tracker in self.trackers.trackers:
-                    if data.p_aram in tracker.trackSetPointers:
+                    if data.p_aram in tracker.trackSetPointers or data.p_aram in tracker.trackPointersQueue:
                         tracker.addTrackSet(data)
                         break
                 else:
