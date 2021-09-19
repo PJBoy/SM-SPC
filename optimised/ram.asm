@@ -70,7 +70,7 @@ macro generate(prefix, suffix, n, step, size)
         if defined("printRamMsl") : print "SPCRAM:", hex(!p_ram+!i*<step>), ":<prefix>!{i}<suffix>"
         !{<prefix>!{i}<suffix>} #= !p_ram+!i*<step>
         !i #= !i+1
-    endif
+    endwhile
     !p_ram #= !p_ram+<size>
 }
 endmacro
@@ -107,7 +107,7 @@ macro generateIndirect(prefix, suffix, p_base, n, step)
     while !i < <n>
         !{<prefix>!{i}<suffix>} #= <p_base>+!i*<step>
         !i #= !i+1
-    endif
+    endwhile
 }
 endmacro
 
@@ -186,7 +186,6 @@ endmacro
 
 %declare_wordArray(trackPointers, !n_tracks)
 %declare_word(p_tracker)
-%declare_word(p_trackerData)
 %declare_byte(trackerTimer)
 %declare_byte(soundEffectsClock)
 %declare_byte(trackIndex)
@@ -263,6 +262,10 @@ endmacro
 %declare_word(sound3_p_charVoiceMask)
 %declare_word(sound3_p_charVoiceIndex)
 }
+
+!p_metadata #= !p_ram
+%declare_word(p_trackerData)
+%declare_byte(enableLateKeyOff)
 
 ; $F0..FF: IO ports
 if !p_ram > $F0

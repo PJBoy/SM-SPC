@@ -939,7 +939,14 @@ push y : mov y,a : pop a : adc a,trackCommandParameterBytes-$E0+y : mov y,a
 bra .loop_commands
 
 .branch_end
+mov a,!enableLateKeyOff : bne +
 mov a,!misc1+1 : beq .branch_note
+bra ++
+
++
+mov a,!misc1+1 : beq .branch_continuePlaying
+
+++
 dec !misc1+1 : bne +
 mov a,!trackRepeatedSubsectionAddresses+1+x : push a : mov a,!trackRepeatedSubsectionAddresses+x : pop y
 bra .loop_sections

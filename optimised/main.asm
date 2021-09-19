@@ -4,8 +4,9 @@
 ; where SM.sfc is your vanilla ROM with an sfc extension (asar requirement).
 ; The `--fix-checksum=off` is there because asar's checksum generation is incorrect (probably related to the bottom of this file)
 
-math pri on ; Use conventional maths priority (otherwise is strict left-to-right evaluation)
 warnings disable W1018 ; "xkas-style conditional compilation detected. Please use the if command instead. [rep 0]"
+warnings disable W1030 ; "DEPRECATION NOTIFICATION: Feature math pri  is deprecated and will be REMOVED in the future. Please update your code to conform to newer styles. Suggested work around: use ;@asar1.9 to indicate proper math. [math pri on]"
+math pri on ; Use conventional maths priority (otherwise is strict left-to-right evaluation)
 
 !printAramSummary = ""
 if defined("printRamMsl") || defined("printRamMap") : undef printAramSummary
@@ -73,7 +74,7 @@ if defined("printAramSummary")
         " --p_instrumentTable=",hex(!instrumentTable),\
         " --p_sampleTable=",hex(!sampleTable),\
         " --p_sampleData=",hex(!sampleData),\
-        " --p_p_trackers=",hex(!p_trackerData)
+        " --p_metadata=",hex(!p_metadata)
 endif
 
 padbyte $00 : pad $CFC2EA ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed

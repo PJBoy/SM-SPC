@@ -29,12 +29,12 @@ parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepat
 parser_b.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
 
 argparser.add_argument('--p_spcEngine',       type = lambda n: int(n, 0x10), default = 0x43E,  help = 'New SPC engine ARAM pointer')
-argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = 0x34AE, help = 'New shared trackers ARAM pointer')
+argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = 0x34AC, help = 'New shared trackers ARAM pointer')
 argparser.add_argument('--p_noteLengthTable', type = lambda n: int(n, 0x10), default = 0x3882, help = 'New note length table ARAM pointer')
 argparser.add_argument('--p_instrumentTable', type = lambda n: int(n, 0x10), default = 0x389A, help = 'New instrument table ARAM pointer')
 argparser.add_argument('--p_sampleTable',     type = lambda n: int(n, 0x10), default = 0x3A00, help = 'New sample table ARAM pointer')
 argparser.add_argument('--p_sampleData',      type = lambda n: int(n, 0x10), default = 0x3B00, help = 'New sample data ARAM pointer')
-argparser.add_argument('--p_p_trackers',      type = lambda n: int(n, 0x10), default = 0x47,   help = 'Pointer to write trackers pointer to')
+argparser.add_argument('--p_metadata',        type = lambda n: int(n, 0x10), default = 0xE0,   help = 'Pointer to write trackers pointer and late key-off flag to')
 
 args = argparser.parse_args()
 rom_in = args.rom_in
@@ -1451,6 +1451,8 @@ class MusicData:
         self.instrumentTable = None # $6C00/90
         self.sampleTable     = None # $6D00/60
         self.sampleData      = None # $6E00+
+        
+        self.lateKeyOffPatch_disableKeyOffNotes = self.lateKeyOffPatch_hijack = self.lateKeyOffPatch_keyOffCode = False
 
         dataBlocks = []
         rom_in.seek(address)
@@ -1469,6 +1471,24 @@ class MusicData:
 
         def init_spcEngine(p_blockHeader, data, i_dataBlock):
             if args.file_type != 'rom':
+                if data.p_aram == 0x1CC5 and len(data.data) == 2:
+                    #print(*(f'{x:02X}' for x in data.read(2)))
+                    data.read(2)
+                    self.lateKeyOffPatch_disableKeyOffNotes = True
+                    return
+                    
+                if data.p_aram == 0x1E8B and len(data.data) == 5:
+                    #print(*(f'{x:02X}' for x in data.read(5)))
+                    data.read(5)
+                    self.lateKeyOffPatch_hijack = True
+                    return
+                    
+                if data.p_aram == 0x56F0 and len(data.data) == 0x12:
+                    #print(*(f'{x:02X}' for x in data.read(0x12)))
+                    data.read(0x12)
+                    self.lateKeyOffPatch_keyOffCode = True
+                    return
+                
                 return
                 
             if self.spcEngine is not None:
@@ -1545,7 +1565,7 @@ class MusicData:
         if i_dataBlock_pointers != len(dataBlocks):
             for (i_dataBlock_data, (p_blockHeader_data, data_data)) in enumerate(dataBlocks):
                 if data_data.p_aram == 0x5830:
-                    print(f'Merging ${data_pointers.p_aram:04X} with ${data_data.p_aram:04X}')
+                    #print(f'Merging ${data_pointers.p_aram:04X} with ${data_data.p_aram:04X}')
                     dataBlocks[i_dataBlock_pointers] = (p_blockHeader_pointers, AramStream(data_pointers.p_aram, data_pointers.data + [0] * (8 - len(data_pointers.data)) + data_data.data))
                     del dataBlocks[i_dataBlock_data]
                     break
@@ -1555,7 +1575,7 @@ class MusicData:
             for (i_dataBlock, (p_blockHeader, data)) in enumerate(dataBlocks):
                 if data.data and p_aram_begin <= data.p_aram < p_aram_end:
                     init(p_blockHeader, data, i_dataBlock)
-                    
+        
         for (p_blockHeader, data) in dataBlocks:
             if len(data.data) != 0:
                 print(f'Data block not (fully) processed: ${data.p_aram:04X} ({formatLong(p_blockHeader)}), {formatValue(len(data.data))} bytes remaining')
@@ -1604,9 +1624,10 @@ class MusicData:
         
         # Write out location of p_trackers (newly required by engine change)
         p_trackers = self.sampleData.p_aram + self.sampleData.blockSize
-        data.writeInt(2, 2)
-        data.writeInt(args.p_p_trackers, 2)
+        data.writeInt(3, 2)
+        data.writeInt(args.p_metadata, 2)
         data.writeInt(p_trackers, 2)
+        data.writeInt(int(self.lateKeyOffPatch_disableKeyOffNotes and self.lateKeyOffPatch_hijack and self.lateKeyOffPatch_keyOffCode), 1)
 
         # SPC data terminator: 0000 dddd where d is the jump target for the SPC engine specifically and ignored otherwise
         data.writeInt(0, 2)
