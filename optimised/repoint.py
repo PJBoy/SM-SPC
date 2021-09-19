@@ -29,7 +29,7 @@ parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepat
 parser_b.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
 
 argparser.add_argument('--p_spcEngine',       type = lambda n: int(n, 0x10), default = 0x43E,  help = 'New SPC engine ARAM pointer')
-argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = 0x34AC, help = 'New shared trackers ARAM pointer')
+argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = 0x34B6, help = 'New shared trackers ARAM pointer')
 argparser.add_argument('--p_noteLengthTable', type = lambda n: int(n, 0x10), default = 0x3882, help = 'New note length table ARAM pointer')
 argparser.add_argument('--p_instrumentTable', type = lambda n: int(n, 0x10), default = 0x389A, help = 'New instrument table ARAM pointer')
 argparser.add_argument('--p_sampleTable',     type = lambda n: int(n, 0x10), default = 0x3A00, help = 'New sample table ARAM pointer')
