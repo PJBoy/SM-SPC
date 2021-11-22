@@ -33,13 +33,13 @@ $3B00 | Sample data / trackers
 For the purposes of tooling, the first 15 bytes of the SPC engine are metadata (SPC engine block can be identified by looking for the SPC data block whose ARAM destination is also the terminator data block's destination - 0xF).
 * 0x0: One byte version number
 * Two byte pointers to:
-** 0x1: SPC engine (entry point, metadata address + 0xF)
-** 0x3: Shared trackers (part of the SPC engine)
-** 0x5: Note length table
-** 0x7: Instrument table
-** 0x9: Sample table
-** 0xB: Sample data / trackers
-** 0xD: Extra
+    * 0x1: SPC engine (entry point, metadata address + 0xF)
+    * 0x3: Shared trackers (part of the SPC engine)
+    * 0x5: Note length table
+    * 0x7: Instrument table
+    * 0x9: Sample table
+    * 0xB: Sample data / trackers
+    * 0xD: Extra
 
 `repoint.py` is included to repoint vanilla NSPCs or mITroid generated NSPCs.
 
@@ -48,9 +48,9 @@ After patching a vanilla ROM with the ASM via asar, run:
 
 To repoint an NSPC file, run either:
 * `python repoint.oy nspc music.nspc music_repointed.nspc --p_spcEngine=44D --p_sharedTrackers=34C5 --p_noteLengthTable=3899 --p_instrumentTable=38B1 --p_sampleTable=3A00 --p_sampleData=3B00 --p_extra=E0`
-** Where all the pointers are reported by asar when assembling the engine mod
+    * Where all the pointers are reported by asar when assembling the engine mod
 * `python repoint.oy nspc music.nspc music_repointed.nspc --rom=SM.smc`
-** Where metadata is extracted from `--rom` argument (a patched ROM)
+    * Where metadata is extracted from `--rom` argument (a patched ROM)
 
 Version history:
-* 1. Initial release (since introducing versioning)
+* 1\. Initial release (since introducing versioning)
