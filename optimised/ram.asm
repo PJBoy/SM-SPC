@@ -263,7 +263,7 @@ endmacro
 %declare_word(sound3_p_charVoiceIndex)
 }
 
-!p_metadata #= !p_ram
+!p_extra #= !p_ram
 %declare_word(p_trackerData)
 %declare_byte(enableLateKeyOff)
 
@@ -510,8 +510,8 @@ endif
 
 !p_end_ram #= !p_ram
 
-; $43E..3881: SPC engine
-!p_ram = $3882
+; $43E..3898: SPC engine
+!p_ram = $3899
 
 %declare_byteArray(noteRingLengthTable, 8)
 %declare_byteArray(noteVolumeTable, $10)

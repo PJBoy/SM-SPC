@@ -1,4 +1,3 @@
-; $1500
 main:
 {
 .initialisation

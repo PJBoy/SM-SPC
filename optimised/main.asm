@@ -19,10 +19,24 @@ if defined("printRamMsl") || defined("printRamMap") : undef printAramSummary
 lorom
 org $CF8104 ; The actual ROM location the data block is going to be written to
 
+!version = 1
+
 incsrc "ram.asm"
 
 arch spc700-inline
 org !p_end_ram
+
+main_metadata:
+{
+db !version
+dw main_engine,\
+   main_sharedTrackers,\
+   !noteRingLengthTable,\
+   !instrumentTable,\
+   !sampleTable,\
+   !sampleData,\
+   !p_extra
+}
 
 main_engine:
 incsrc "engine.asm"
@@ -33,7 +47,7 @@ incsrc "utility.asm"
 main_music:
 incsrc "music.asm"
 
-incsrc "sound library.asm" ; Contains macros to generate code that's generic across sound libraries
+incsrc "sound library.asm" ; Contains code that's generic across sound libraries
 
 main_soundLibrary1:
 incsrc "sound library 1.asm"
@@ -51,6 +65,7 @@ main_eof:
 
 if defined("printAramSummary")
     print "$",hex(!p_end_ram), ": RAM end"
+    print "$",hex(main_metadata), ": Metadata"
     print "$",hex(main_engine), ": Engine"
     print "$",hex(main_utility), ": Utility"
     print "$",hex(main_music), ": Music"
@@ -74,7 +89,7 @@ if defined("printAramSummary")
         " --p_instrumentTable=",hex(!instrumentTable),\
         " --p_sampleTable=",hex(!sampleTable),\
         " --p_sampleData=",hex(!sampleData),\
-        " --p_metadata=",hex(!p_metadata)
+        " --p_extra=",hex(!p_extra)
 endif
 
 padbyte $00 : pad $CFC2EA ; Asar requires a CPU address here. Possibly a bug, if so fix this if the bug gets fixed
@@ -85,3 +100,7 @@ arch 65816
 org $CFC2EA
 
 dw read2($CFC2EA), read2($CFC2EC)
+
+; Write engine pointer to EOF data block's ARAM destination
+org $D0E20B
+dw main_engine

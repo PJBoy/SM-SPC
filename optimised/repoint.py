@@ -17,24 +17,25 @@ indent = '                        '
 
 argparser = argparse.ArgumentParser(description = 'Repoint Super Metroid music data.')
 
-subparsers = argparser.add_subparsers(dest = 'file_type', help='sub-command help')
-parser_a = subparsers.add_parser('rom', help='a help')
+subparsers = argparser.add_subparsers(dest = 'mode', help = '')
+parser_a = subparsers.add_parser('rom', help = "Repoint a ROM that's been patched with the engine mod")
 parser_a.add_argument('rom_in',  type = argparse.FileType('rb'),  help = 'Filepath to input ROM')
 parser_a.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
-parser_b = subparsers.add_parser('nspc', help='a help')
+parser_b = subparsers.add_parser('nspc', help = 'Repoint an NSPC file to be compatible with the engine mod')
 parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepath to input NSPC')
 parser_b.add_argument('rom_out', type = argparse.FileType('wb'), help = 'Filepath to output NSPC')
-parser_b = subparsers.add_parser('nspctest', help='a help')
-parser_b.add_argument('rom_in',  type = argparse.FileType('rb'), help = 'Filepath to input NSPC')
+parser_b.add_argument('--rom',   type = argparse.FileType('rb'), help = 'Filepath to reference ROM')
+parser_b = subparsers.add_parser('nspctest', help = 'Dev option. Repoint an NSPC file and place into ROM, overwriting Red Brinstar (no size check done)')
+parser_b.add_argument('rom_in',  type = argparse.FileType('rb'),  help = 'Filepath to input NSPC')
 parser_b.add_argument('rom_out', type = argparse.FileType('r+b'), help = 'Filepath to output ROM')
 
-argparser.add_argument('--p_spcEngine',       type = lambda n: int(n, 0x10), default = 0x43E,  help = 'New SPC engine ARAM pointer')
-argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = 0x34B6, help = 'New shared trackers ARAM pointer')
-argparser.add_argument('--p_noteLengthTable', type = lambda n: int(n, 0x10), default = 0x3882, help = 'New note length table ARAM pointer')
-argparser.add_argument('--p_instrumentTable', type = lambda n: int(n, 0x10), default = 0x389A, help = 'New instrument table ARAM pointer')
-argparser.add_argument('--p_sampleTable',     type = lambda n: int(n, 0x10), default = 0x3A00, help = 'New sample table ARAM pointer')
-argparser.add_argument('--p_sampleData',      type = lambda n: int(n, 0x10), default = 0x3B00, help = 'New sample data ARAM pointer')
-argparser.add_argument('--p_metadata',        type = lambda n: int(n, 0x10), default = 0xE0,   help = 'Pointer to write trackers pointer and late key-off flag to')
+argparser.add_argument('--p_spcEngine',       type = lambda n: int(n, 0x10), default = None, help = 'New SPC engine ARAM pointer')
+argparser.add_argument('--p_sharedTrackers',  type = lambda n: int(n, 0x10), default = None, help = 'New shared trackers ARAM pointer')
+argparser.add_argument('--p_noteLengthTable', type = lambda n: int(n, 0x10), default = None, help = 'New note length table ARAM pointer')
+argparser.add_argument('--p_instrumentTable', type = lambda n: int(n, 0x10), default = None, help = 'New instrument table ARAM pointer')
+argparser.add_argument('--p_sampleTable',     type = lambda n: int(n, 0x10), default = None, help = 'New sample table ARAM pointer')
+argparser.add_argument('--p_sampleData',      type = lambda n: int(n, 0x10), default = None, help = 'New sample data ARAM pointer')
+argparser.add_argument('--p_extra',           type = lambda n: int(n, 0x10), default = None, help = 'Pointer to write trackers pointer and late key-off flag to')
 
 args = argparser.parse_args()
 rom_in = args.rom_in
@@ -105,13 +106,39 @@ class MusicData:
     '''
 
     class SpcEngine:
-        "Boring class that opaquely holds the data it's given and its destination address"
+        "Boring class that opaquely holds the data it's given and its destination address. Now reads metadata(!)"
+        
+        def readMetadataIntoArgs(self):
+            if args.p_spcEngine is None:
+                args.p_spcEngine = self.data[1] | self.data[2] << 8
+        
+            if args.p_sharedTrackers is None:
+                args.p_sharedTrackers = self.data[3] | self.data[4] << 8
+        
+            if args.p_noteLengthTable is None:
+                args.p_noteLengthTable = self.data[5] | self.data[6] << 8
+        
+            if args.p_instrumentTable is None:
+                args.p_instrumentTable = self.data[7] | self.data[8] << 8
+        
+            if args.p_sampleTable is None:
+                args.p_sampleTable = self.data[9] | self.data[0xA] << 8
+        
+            if args.p_sampleData is None:
+                args.p_sampleData = self.data[0xB] | self.data[0xC] << 8
+        
+            if args.p_extra is None:
+                args.p_extra = self.data[0xD] | self.data[0xE] << 8
         
         def __init__(self, p_blockHeader, data):
             self.p_blockHeader = p_blockHeader
             self.blockSize = len(data.data)
             self.p_aram = data.p_aram
             self.data = data.read(self.blockSize)
+            if self.p_aram == 0x1500:
+                raise RuntimeError('This looks like a vanilla ROM')
+                
+            self.readMetadataIntoArgs()
 
         def repoint(self, p_aram, size):
             self.p_aram = p_aram
@@ -1441,7 +1468,7 @@ class MusicData:
                 sampleRow = ', '.join(sampleEntries)
                 print(f'{org_aram(p_aram_section)}db {sampleRow}')
 
-    def __init__(self, address, name):
+    def __init__(self, address, name, engineOnly = False):
         self.address = address
         self.name = name
 
@@ -1462,6 +1489,7 @@ class MusicData:
             p_aram = int.from_bytes(rom_in.read(2), 'little')
             #print(f'Found SPC block {formatLong(p_blockHeader)}: ({formatValue(blockSize):>5}, ${p_aram:04X})')
             if blockSize == 0:
+                p_engine = p_aram - 0xF # 0xF bytes of metadata
                 break
 
             data = AramStream(p_aram, [int.from_bytes(rom_in.read(1), 'little') for _ in range(blockSize)])
@@ -1470,7 +1498,7 @@ class MusicData:
         self.p_eof = hex2snes(rom_in.tell() - 4)
 
         def init_spcEngine(p_blockHeader, data, i_dataBlock):
-            if args.file_type != 'rom':
+            if args.mode != 'rom':
                 if data.p_aram == 0x1CC5 and len(data.data) == 2:
                     #print(*(f'{x:02X}' for x in data.read(2)))
                     data.read(2)
@@ -1488,8 +1516,6 @@ class MusicData:
                     data.read(0x12)
                     self.lateKeyOffPatch_keyOffCode = True
                     return
-                
-                return
                 
             if self.spcEngine is not None:
                 raise RuntimeError("Duplicate SPC engine")
@@ -1571,6 +1597,15 @@ class MusicData:
                     break
         
         self.blocks = {}
+        
+        # Get SPC engine first, so we can read its metadata for `aramRegions`
+        for (i_dataBlock, (p_blockHeader, data)) in enumerate(dataBlocks):
+            if data.p_aram == p_engine:
+                init_spcEngine(p_blockHeader, data, i_dataBlock)
+                break
+        
+        if engineOnly:
+            return
         for (p_aram_begin, p_aram_end, init) in aramRegions:
             for (i_dataBlock, (p_blockHeader, data)) in enumerate(dataBlocks):
                 if data.data and p_aram_begin <= data.p_aram < p_aram_end:
@@ -1582,7 +1617,7 @@ class MusicData:
 
     def repoint(self):
         if self.spcEngine is not None:
-            self.spcEngine.repoint(args.p_spcEngine, args.p_noteLengthTable - args.p_spcEngine)
+            self.spcEngine.repoint(args.p_spcEngine - 0xF, args.p_noteLengthTable - args.p_spcEngine + 0xF)
             self.trackers.repointSharedTrackers(args.p_sharedTrackers)
 
         if self.noteLengthTable is not None:
@@ -1625,14 +1660,14 @@ class MusicData:
         # Write out location of p_trackers (newly required by engine change)
         p_trackers = self.sampleData.p_aram + self.sampleData.blockSize
         data.writeInt(3, 2)
-        data.writeInt(args.p_metadata, 2)
+        data.writeInt(args.p_extra, 2)
         data.writeInt(p_trackers, 2)
         data.writeInt(int(self.lateKeyOffPatch_disableKeyOffNotes and self.lateKeyOffPatch_hijack and self.lateKeyOffPatch_keyOffCode), 1)
 
         # SPC data terminator: 0000 dddd where d is the jump target for the SPC engine specifically and ignored otherwise
         data.writeInt(0, 2)
         if self.spcEngine is not None:
-            data.writeInt(self.spcEngine.p_aram, 2)
+            data.writeInt(self.spcEngine.p_aram + 0xF, 2) # + Fh to skip metadata
         else:
             data.writeInt(0x1500, 2)
 
@@ -1681,7 +1716,7 @@ music = [
     'Samus theme (same as upper Crateria)'
 ]
 
-if args.file_type == 'rom':
+if args.mode == 'rom':
     p_rom = snes2hex(0xCF_8000)
     for (i_music, musicName) in enumerate(music):
         rom_in.seek(snes2hex(0x8F_E7E1) + i_music * 3)
@@ -1696,13 +1731,25 @@ if args.file_type == 'rom':
             pass
             
         p_rom = musicData.write(p_rom)
-elif args.file_type == 'nspc':
+elif args.mode == 'nspc':
+    if args.rom:
+        # Hack these globals quickly to get MusicData.SpcEngine to read the reference ROM metadata into args
+        rom_in = args.rom
+        MusicData(snes2hex(0xCF_8000), '', True)
+        rom_in = args.rom_in
+        
     musicData = MusicData(0, "Custom NSPC")
     musicData.repoint()
     print(f'Max echo time = {(0x1_0000 - (musicData.trackers.p_aram + musicData.trackers.blockSize)) // 0x800} frames')
     #musicData.pjlog()
     p_rom = musicData.write(0)
-else: # args.file_type == 'nspctest':
+else: # args.mode == 'nspctest':
+    if True:
+        # Hack these globals quickly to get MusicData.SpcEngine to read the reference ROM metadata into args
+        rom_in = args.rom_out
+        MusicData(snes2hex(0xCF_8000), '', True)
+        rom_in = args.rom_in
+        
     rom_out.seek(snes2hex(0x8F_E7E1) + 6 * 3)
     p_musicData = int.from_bytes(rom_out.read(3), 'little')
 
