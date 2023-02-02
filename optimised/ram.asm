@@ -252,7 +252,7 @@ endmacro
 
 ; Sounds
 {
-%declare_word(p_echoBuffer)
+%declare_word(p_echoBuffer) ; Unused?
 %declare_word(sound2_instructionListPointerSet)
 %declare_word(sound2_p_charVoiceBitset)
 %declare_word(sound2_p_charVoiceMask)

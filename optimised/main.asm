@@ -4,8 +4,7 @@
 ; where SM.sfc is your vanilla ROM with an sfc extension (asar requirement).
 ; The `--fix-checksum=off` is there because asar's checksum generation is incorrect (probably related to the bottom of this file)
 
-warnings disable W1018 ; "xkas-style conditional compilation detected. Please use the if command instead. [rep 0]"
-warnings disable W1030 ; "DEPRECATION NOTIFICATION: Feature math pri  is deprecated and will be REMOVED in the future. Please update your code to conform to newer styles. Suggested work around: use ;@asar1.9 to indicate proper math. [math pri on]"
+warnings disable Wfeature_deprecated ; The workarounds for the things warned about do not work
 math pri on ; Use conventional maths priority (otherwise is strict left-to-right evaluation)
 
 !printAramSummary = ""
