@@ -62,6 +62,8 @@ incsrc "shared trackers.asm"
 
 main_eof:
 
+assert main_eof == !noteRingLengthTable, "Need to update ram.asm"
+
 if defined("printAramSummary")
     print "$",hex(!p_end_ram), ": RAM end"
     print "$",hex(main_metadata), ": Metadata"

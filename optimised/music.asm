@@ -84,21 +84,74 @@ handleMusicTrack:
 ; Check CPU IO 0
 mov y,!cpuIo0_read_prev
 mov a,!cpuIo0_read : mov !cpuIo0_read_prev,a
+cmp !panReadPhase,#$00 : bne .panReadPhase
+
+.notPanReadPhase
+cmp a,#$F2 : bne +
+mov !panReadPhase,#$01
+mov !cpuIo0_write,!cpuIo0_read
+;mov !cpuIo0_read_prev,y : mov !cpuIo0_read,y ; maybe?
+bra .end_commands
+
++
 cmp a,#$F0 : beq keyOffMusicVoices
-cmp a,#$F1 : beq +
+cmp a,#$F1 : beq .end_commands
 cmp a,#$FF : beq loadNewMusicData
 cmp y,!cpuIo0_read : bne loadNewMusicTrack
 
-+
+.end_commands
 mov a,!cpuIo0_write : beq musicTrackInitialisation_ret
-mov a,!musicTrackStatus : beq .branch_musicTrackPlaying
+mov a,!musicTrackStatus : bne + : jmp .branch_musicTrackPlaying : +
 dbnz !musicTrackStatus,musicTrackInitialisation
+bra .loop_tracker
+
+.panReadPhase
+{
+; 0                          40h                       80h                        C0h                        FFh
+; Track L left volume 100%   Track L left volume 100%  Track L left volume 100%   Track L left volume 50%    Track L left volume 0%
+; Track L right volume 100%  Track L right volume 50%  Track L right volume 0%    Track L right volume 0%    Track L right volume 0%
+; Track R left volume 0%     Track R left volume 0%    Track R left volume 0%     Track R left volume 50%    Track R left volume 100%
+; Track R right volume 0%    Track R right volume 50%  Track R right volume 100%  Track R right volume 100%  Track R right volume 100%
+
+; Track L left volume  = FFh - (max(80h, t) - 80h) * 2
+; Track R left volume  =       (max(80h, t) - 80h) * 2
+; Track L right volume = FFh - min(80h, t) * 2
+; Track R right volume =       min(80h, t) * 2
+
+print pc," ; panReadPhase"
+
+cmp y,!cpuIo0_read : beq .end_commands
+mov !cpuIo0_write,!cpuIo0_read
+cmp !panReadPhase,#$01 : beq .phase1
+mov !panReadPhase,#$00
+bra .end_commands
+
+.phase1
+cmp a,#$80 : bcs +
+mov !volumeLeftTrackL,#$FF
+mov !volumeLeftTrackR,#$00
+asl a : mov !volumeRightTrackR,a
+eor a,#$FF : mov !volumeRightTrackL,a
+bra ++
+
++
+mov !volumeRightTrackL,#$00
+mov !volumeRightTrackR,#$FF
+and a,#$7F
+asl a : mov !volumeLeftTrackR,a
+eor a,#$FF : mov !volumeLeftTrackL,a
+
+++
+mov !panReadPhase,#$02
+;mov !cpuIo0_read_prev,y : mov !cpuIo0_read,y ; maybe?
+bra .end_commands
+}
 
 .loop_tracker
 {
 call getNextTrackerCommand
 bne .branch_loadNewTrackData
-mov y,a : beq loadNewMusicTrack
+mov y,a : bne + : jmp loadNewMusicTrack : +
 cmp a,#$80 : beq +
 cmp a,#$81 : bne .branch_processTrackerTimer
 mov a,#$00
@@ -886,6 +939,12 @@ mov a,x : xcn a : lsr a : mov !dspVoiceVolumeIndex,a
 {
 mov y,!panningBias+1 : mov a,panningVolumeMultipliers+1+y : setc : sbc a,panningVolumeMultipliers+y : mov y,!panningBias : mul ya : mov a,y
 mov y,!panningBias+1 : clrc : adc a,panningVolumeMultipliers+y : mov y,a : mov a,!trackOutputVolumes+x : mul ya
+cmp x,#$08 : bcs ++
+bbs0 !dspVoiceVolumeIndex,+ : mov a,!volumeLeftTrackL : bra +++ : + : mov a,!volumeRightTrackL : bra +++
+++
+bbs0 !dspVoiceVolumeIndex,+ : mov a,!volumeLeftTrackR : bra +++ : + : mov a,!volumeRightTrackR
++++
+mul ya
 
 ; Handle phase inversion
 mov a,!trackPhaseInversionOptions+x : asl a
